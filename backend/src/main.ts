@@ -1,4 +1,6 @@
 import { NestFactory } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
+
 import {
   StandardSchemaValidationPipe,
   VersioningType,
@@ -23,7 +25,9 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(process.env.PORT ?? 3000);
+  const configService = app.get(ConfigService);
+
+  await app.listen(configService.getOrThrow<number>('PORT'));
 }
 
 bootstrap();
