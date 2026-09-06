@@ -1,5 +1,9 @@
 import { jest } from '@jest/globals';
 
+import {
+  AppointmentEntity,
+  AppointmentStatus,
+} from '../appointments/entities/appointment.entity.js';
 import { AvailabilityExceptionEntity } from '../availability-exceptions/entities/availability-exception.entity.js';
 import { AvailabilitySchedulesService } from './availability-schedules.service.js';
 import { AvailabilityScheduleEntity } from './entities/availability-schedule.entity.js';
@@ -36,6 +40,10 @@ describe('AvailabilitySchedulesService', () => {
     ),
   };
 
+  const appointmentsRepository = {
+    createQueryBuilder: jest.fn<() => any>(),
+  };
+
   const facultyService = {
     findById: jest.fn(
       async (): Promise<{ id: string; userId?: string }> => ({
@@ -66,6 +74,15 @@ describe('AvailabilitySchedulesService', () => {
 
     exceptionsRepository.find.mockResolvedValue([]);
 
+    appointmentsRepository.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      setParameters: jest.fn().mockReturnThis(),
+      getMany: jest.fn(
+        async (): Promise<AppointmentEntity[]> => [],
+      ),
+    });
+
     facultyService.findById.mockResolvedValue({
       id: '',
     });
@@ -73,6 +90,7 @@ describe('AvailabilitySchedulesService', () => {
     service = new AvailabilitySchedulesService(
       schedulesRepository as never,
       exceptionsRepository as never,
+      appointmentsRepository as never,
       facultyService as never,
     );
   });
@@ -711,6 +729,335 @@ describe('AvailabilitySchedulesService', () => {
           date,
           startTime: '09:30',
           endTime: '10:00',
+        },
+      ]);
+    });
+
+
+    it('should remove a slot blocked by a PENDING appointment', async () => {
+      const facultyId =
+        '11111111-1111-1111-1111-111111111111';
+
+      const date = '2026-09-07'; // Monday
+
+      const schedule = {
+        facultyId,
+        dayOfWeek: 1,
+        startTime: '09:00',
+        endTime: '11:00',
+        slotDuration: 30 as const,
+        isActive: true,
+      } as AvailabilityScheduleEntity;
+
+      const appointment = {
+        facultyId,
+        startTime: new Date('2026-09-07T09:30:00.000Z'),
+        endTime: new Date('2026-09-07T10:00:00.000Z'),
+        status: AppointmentStatus.PENDING,
+      } as AppointmentEntity;
+
+      facultyService.findById.mockResolvedValue({
+        id: facultyId,
+      });
+
+      schedulesRepository.find.mockResolvedValue([schedule]);
+      exceptionsRepository.find.mockResolvedValue([]);
+
+      appointmentsRepository.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameters: jest.fn().mockReturnThis(),
+        getMany: jest.fn(
+          async (): Promise<AppointmentEntity[]> => [appointment],
+        ),
+      });
+
+      const result = await service.getAvailableSlots(
+        facultyId,
+        date,
+      );
+
+      expect(result).toEqual([
+        {
+          date,
+          startTime: '09:00',
+          endTime: '09:30',
+        },
+        {
+          date,
+          startTime: '10:00',
+          endTime: '10:30',
+        },
+        {
+          date,
+          startTime: '10:30',
+          endTime: '11:00',
+        },
+      ]);
+    });
+
+    it('should remove a slot blocked by a CONFIRMED appointment', async () => {
+      const facultyId =
+        '11111111-1111-1111-1111-111111111111';
+
+      const date = '2026-09-07'; // Monday
+
+      const schedule = {
+        facultyId,
+        dayOfWeek: 1,
+        startTime: '09:00',
+        endTime: '11:00',
+        slotDuration: 30 as const,
+        isActive: true,
+      } as AvailabilityScheduleEntity;
+
+      const appointment = {
+        facultyId,
+        startTime: new Date('2026-09-07T10:00:00.000Z'),
+        endTime: new Date('2026-09-07T10:30:00.000Z'),
+        status: AppointmentStatus.CONFIRMED,
+      } as AppointmentEntity;
+
+      facultyService.findById.mockResolvedValue({
+        id: facultyId,
+      });
+
+      schedulesRepository.find.mockResolvedValue([schedule]);
+      exceptionsRepository.find.mockResolvedValue([]);
+
+      appointmentsRepository.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameters: jest.fn().mockReturnThis(),
+        getMany: jest.fn(
+          async (): Promise<AppointmentEntity[]> => [appointment],
+        ),
+      });
+
+      const result = await service.getAvailableSlots(
+        facultyId,
+        date,
+      );
+
+      expect(result).toEqual([
+        {
+          date,
+          startTime: '09:00',
+          endTime: '09:30',
+        },
+        {
+          date,
+          startTime: '09:30',
+          endTime: '10:00',
+        },
+        {
+          date,
+          startTime: '10:30',
+          endTime: '11:00',
+        },
+      ]);
+    });
+
+    it('should not remove slots for REJECTED or CANCELLED appointments', async () => {
+      const facultyId =
+        '11111111-1111-1111-1111-111111111111';
+
+      const date = '2026-09-07'; // Monday
+
+      const schedule = {
+        facultyId,
+        dayOfWeek: 1,
+        startTime: '09:00',
+        endTime: '11:00',
+        slotDuration: 30 as const,
+        isActive: true,
+      } as AvailabilityScheduleEntity;
+
+      const rejectedAppointment = {
+        facultyId,
+        startTime: new Date('2026-09-07T09:30:00.000Z'),
+        endTime: new Date('2026-09-07T10:00:00.000Z'),
+        status: AppointmentStatus.REJECTED,
+      } as AppointmentEntity;
+
+      const cancelledAppointment = {
+        facultyId,
+        startTime: new Date('2026-09-07T10:00:00.000Z'),
+        endTime: new Date('2026-09-07T10:30:00.000Z'),
+        status: AppointmentStatus.CANCELLED,
+      } as AppointmentEntity;
+
+      facultyService.findById.mockResolvedValue({
+        id: facultyId,
+      });
+
+      schedulesRepository.find.mockResolvedValue([schedule]);
+      exceptionsRepository.find.mockResolvedValue([]);
+
+      // Simulate the database status condition used by the service:
+      // only PENDING and CONFIRMED appointments are returned.
+      appointmentsRepository.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameters: jest.fn().mockReturnThis(),
+        getMany: jest.fn(
+          async (): Promise<AppointmentEntity[]> => [],
+        ),
+      });
+
+      const result = await service.getAvailableSlots(
+        facultyId,
+        date,
+      );
+
+      expect(result).toEqual([
+        {
+          date,
+          startTime: '09:00',
+          endTime: '09:30',
+        },
+        {
+          date,
+          startTime: '09:30',
+          endTime: '10:00',
+        },
+        {
+          date,
+          startTime: '10:00',
+          endTime: '10:30',
+        },
+        {
+          date,
+          startTime: '10:30',
+          endTime: '11:00',
+        },
+      ]);
+
+      expect(rejectedAppointment.status).toBe(
+        AppointmentStatus.REJECTED,
+      );
+      expect(cancelledAppointment.status).toBe(
+        AppointmentStatus.CANCELLED,
+      );
+    });
+
+    it('should not remove a slot for a non-overlapping appointment', async () => {
+      const facultyId =
+        '11111111-1111-1111-1111-111111111111';
+
+      const date = '2026-09-07'; // Monday
+
+      const schedule = {
+        facultyId,
+        dayOfWeek: 1,
+        startTime: '09:00',
+        endTime: '11:00',
+        slotDuration: 30 as const,
+        isActive: true,
+      } as AvailabilityScheduleEntity;
+
+      const appointment = {
+        facultyId,
+        startTime: new Date('2026-09-07T11:00:00.000Z'),
+        endTime: new Date('2026-09-07T11:30:00.000Z'),
+        status: AppointmentStatus.CONFIRMED,
+      } as AppointmentEntity;
+
+      facultyService.findById.mockResolvedValue({
+        id: facultyId,
+      });
+
+      schedulesRepository.find.mockResolvedValue([schedule]);
+      exceptionsRepository.find.mockResolvedValue([]);
+
+      appointmentsRepository.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameters: jest.fn().mockReturnThis(),
+        getMany: jest.fn(
+          async (): Promise<AppointmentEntity[]> => [appointment],
+        ),
+      });
+
+      const result = await service.getAvailableSlots(
+        facultyId,
+        date,
+      );
+
+      expect(result).toEqual([
+        {
+          date,
+          startTime: '09:00',
+          endTime: '09:30',
+        },
+        {
+          date,
+          startTime: '09:30',
+          endTime: '10:00',
+        },
+        {
+          date,
+          startTime: '10:00',
+          endTime: '10:30',
+        },
+        {
+          date,
+          startTime: '10:30',
+          endTime: '11:00',
+        },
+      ]);
+    });
+
+    it('should remove every slot overlapped by an active appointment', async () => {
+      const facultyId =
+        '11111111-1111-1111-1111-111111111111';
+
+      const date = '2026-09-07'; // Monday
+
+      const schedule = {
+        facultyId,
+        dayOfWeek: 1,
+        startTime: '09:00',
+        endTime: '11:00',
+        slotDuration: 30 as const,
+        isActive: true,
+      } as AvailabilityScheduleEntity;
+
+      const appointment = {
+        facultyId,
+        startTime: new Date('2026-09-07T09:15:00.000Z'),
+        endTime: new Date('2026-09-07T10:15:00.000Z'),
+        status: AppointmentStatus.CONFIRMED,
+      } as AppointmentEntity;
+
+      facultyService.findById.mockResolvedValue({
+        id: facultyId,
+      });
+
+      schedulesRepository.find.mockResolvedValue([schedule]);
+      exceptionsRepository.find.mockResolvedValue([]);
+
+      appointmentsRepository.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameters: jest.fn().mockReturnThis(),
+        getMany: jest.fn(
+          async (): Promise<AppointmentEntity[]> => [appointment],
+        ),
+      });
+
+      const result = await service.getAvailableSlots(
+        facultyId,
+        date,
+      );
+
+      // The appointment overlaps 09:00-09:30, 09:30-10:00,
+      // and 10:00-10:30, so all three are unavailable.
+      expect(result).toEqual([
+        {
+          date,
+          startTime: '10:30',
+          endTime: '11:00',
         },
       ]);
     });

@@ -7,6 +7,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { AppointmentEntity } from '../appointments/entities/appointment.entity.js';
+import { AppointmentStatus } from '../appointments/entities/appointment.entity.js';
 import { AvailabilityExceptionEntity } from '../availability-exceptions/entities/availability-exception.entity.js';
 import { FacultyService } from '../faculty/faculty.service.js';
 import type {
@@ -28,6 +30,9 @@ export class AvailabilitySchedulesService {
 
     @InjectRepository(AvailabilityExceptionEntity)
     private readonly exceptionsRepository: Repository<AvailabilityExceptionEntity>,
+
+    @InjectRepository(AppointmentEntity)
+    private readonly appointmentsRepository: Repository<AppointmentEntity>,
 
     private readonly facultyService: FacultyService,
   ) {}
@@ -207,6 +212,40 @@ export class AvailabilitySchedulesService {
       },
     });
 
+    const appointments = await this.appointmentsRepository
+      .createQueryBuilder('appointment')
+      .where('appointment.faculty_id = :facultyId', {
+        facultyId,
+      })
+      .andWhere('appointment.status IN (:...statuses)', {
+        statuses: [
+          AppointmentStatus.PENDING,
+          AppointmentStatus.CONFIRMED,
+        ],
+      })
+      .andWhere(
+        'appointment.start_time < :dayEnd',
+      )
+      .andWhere(
+        'appointment.end_time > :dayStart',
+      )
+      .setParameters({
+        dayStart: `${date}T00:00:00.000Z`,
+        dayEnd: `${date}T23:59:59.999Z`,
+      })
+      .getMany();
+
+    const bookedIntervals = appointments.map(
+      (appointment) => ({
+        startTime: this.extractUtcTime(
+          appointment.startTime,
+        ),
+        endTime: this.extractUtcTime(
+          appointment.endTime,
+        ),
+      }),
+    );
+
     const slots: Array<{
       date: string;
       startTime: string;
@@ -227,15 +266,33 @@ export class AvailabilitySchedulesService {
         schedule.slotDuration,
       );
 
-      slots.push(
-        ...scheduleSlots.filter((slot) =>
-          intervals.some(
-            (interval) =>
-              slot.startTime >= interval.startTime &&
-              slot.endTime <= interval.endTime,
-          ),
-        ),
+      const availableSlots = scheduleSlots.filter(
+        (slot) => {
+          const isInsideAvailability =
+            intervals.some(
+              (interval) =>
+                slot.startTime >= interval.startTime &&
+                slot.endTime <= interval.endTime,
+            );
+
+          if (!isInsideAvailability) {
+            return false;
+          }
+
+          const overlapsAppointment =
+            bookedIntervals.some(
+              (appointment) =>
+                slot.startTime <
+                  appointment.endTime &&
+                slot.endTime >
+                  appointment.startTime,
+            );
+
+          return !overlapsAppointment;
+        },
       );
+
+      slots.push(...availableSlots);
     }
 
     return slots;
@@ -408,6 +465,20 @@ export class AvailabilitySchedulesService {
       .padStart(2, '0')}:${remainingMinutes
       .toString()
       .padStart(2, '0')}`;
+  }
+
+  private extractUtcTime(date: Date): string {
+    const hours = date
+      .getUTCHours()
+      .toString()
+      .padStart(2, '0');
+
+    const minutes = date
+      .getUTCMinutes()
+      .toString()
+      .padStart(2, '0');
+
+    return `${hours}:${minutes}`;
   }
 
   private async assertCanManageFaculty(

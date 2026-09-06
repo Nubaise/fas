@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AppointmentEntity } from '../appointments/entities/appointment.entity.js';
 import { FacultyModule } from '../faculty/faculty.module.js';
 import { AvailabilityExceptionEntity } from '../availability-exceptions/entities/availability-exception.entity.js';
 import { AvailabilitySchedulesController } from './availability-schedules.controller.js';
@@ -12,6 +13,7 @@ import { AvailabilityScheduleEntity } from './entities/availability-schedule.ent
     TypeOrmModule.forFeature([
       AvailabilityScheduleEntity,
       AvailabilityExceptionEntity,
+      AppointmentEntity,
     ]),
     FacultyModule,
   ],
