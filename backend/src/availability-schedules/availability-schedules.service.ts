@@ -174,6 +174,7 @@ export class AvailabilitySchedulesService {
   async getAvailableSlots(
     facultyId: string,
     date: string,
+    excludeAppointmentId?: string,
   ): Promise<
     Array<{
       date: string;
@@ -229,9 +230,17 @@ export class AvailabilitySchedulesService {
       .andWhere(
         'appointment.end_time > :dayStart',
       )
+      .andWhere(
+        excludeAppointmentId
+          ? 'appointment.id != :excludeAppointmentId'
+          : '1 = 1',
+      )
       .setParameters({
         dayStart: `${date}T00:00:00.000Z`,
         dayEnd: `${date}T23:59:59.999Z`,
+        ...(excludeAppointmentId
+          ? { excludeAppointmentId }
+          : {}),
       })
       .getMany();
 

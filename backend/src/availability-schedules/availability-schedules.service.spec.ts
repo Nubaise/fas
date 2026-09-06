@@ -858,6 +858,83 @@ describe('AvailabilitySchedulesService', () => {
       ]);
     });
 
+    it('should exclude the current appointment when excludeAppointmentId is provided', async () => {
+      const facultyId =
+        '11111111-1111-1111-1111-111111111111';
+
+      const appointmentId =
+        '44444444-4444-4444-4444-444444444444';
+
+      const date = '2026-09-07'; // Monday
+
+      const schedule = {
+        facultyId,
+        dayOfWeek: 1,
+        startTime: '09:00',
+        endTime: '11:00',
+        slotDuration: 30 as const,
+        isActive: true,
+      } as AvailabilityScheduleEntity;
+
+      facultyService.findById.mockResolvedValue({
+        id: facultyId,
+      });
+
+      schedulesRepository.find.mockResolvedValue([schedule]);
+      exceptionsRepository.find.mockResolvedValue([]);
+
+      const andWhere = jest.fn().mockReturnThis();
+      const setParameters = jest.fn().mockReturnThis();
+
+      appointmentsRepository.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere,
+        setParameters,
+        getMany: jest.fn(
+          async (): Promise<AppointmentEntity[]> => [],
+        ),
+      });
+
+      const result = await service.getAvailableSlots(
+        facultyId,
+        date,
+        appointmentId,
+      );
+
+      expect(result).toEqual([
+        {
+          date,
+          startTime: '09:00',
+          endTime: '09:30',
+        },
+        {
+          date,
+          startTime: '09:30',
+          endTime: '10:00',
+        },
+        {
+          date,
+          startTime: '10:00',
+          endTime: '10:30',
+        },
+        {
+          date,
+          startTime: '10:30',
+          endTime: '11:00',
+        },
+      ]);
+
+      expect(andWhere).toHaveBeenCalledWith(
+        'appointment.id != :excludeAppointmentId',
+      );
+
+      expect(setParameters).toHaveBeenCalledWith({
+        dayStart: `${date}T00:00:00.000Z`,
+        dayEnd: `${date}T23:59:59.999Z`,
+        excludeAppointmentId: appointmentId,
+      });
+    });
+
     it('should not remove slots for REJECTED or CANCELLED appointments', async () => {
       const facultyId =
         '11111111-1111-1111-1111-111111111111';

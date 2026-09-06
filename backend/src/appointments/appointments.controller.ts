@@ -11,7 +11,9 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { AppointmentsService } from './appointments.service.js';
 import {
   createAppointmentSchema,
+  rescheduleAppointmentSchema,
   type CreateAppointmentDto,
+  type RescheduleAppointmentDto,
 } from './dto/appointment.dto.js';
 
 type CurrentUserPayload = {
@@ -84,6 +86,49 @@ export class AppointmentsController {
     currentUser: CurrentUserPayload,
   ) {
     return this.appointmentsService.reject(
+      id,
+      currentUser,
+    );
+  }
+
+
+  @Post(':id/cancel')
+  @Version('1')
+  async cancel(
+    @Param('id') id: string,
+    @CurrentUser()
+    currentUser: CurrentUserPayload,
+  ) {
+    return this.appointmentsService.cancel(
+      id,
+      currentUser,
+    );
+  }
+
+  @Post(':id/reschedule')
+  @Version('1')
+  async reschedule(
+    @Param('id') id: string,
+    @Body(rescheduleAppointmentSchema)
+    body: RescheduleAppointmentDto,
+    @CurrentUser()
+    currentUser: CurrentUserPayload,
+  ) {
+    return this.appointmentsService.reschedule(
+      id,
+      body,
+      currentUser,
+    );
+  }
+
+  @Post(':id/complete')
+  @Version('1')
+  async complete(
+    @Param('id') id: string,
+    @CurrentUser()
+    currentUser: CurrentUserPayload,
+  ) {
+    return this.appointmentsService.complete(
       id,
       currentUser,
     );

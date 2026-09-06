@@ -20,3 +20,22 @@ export const createAppointmentSchema = z
 export type CreateAppointmentDto = z.infer<
   typeof createAppointmentSchema
 >;
+
+export const rescheduleAppointmentSchema = z
+  .object({
+    startTime: z.string().datetime({ offset: true }),
+    endTime: z.string().datetime({ offset: true }),
+  })
+  .refine(
+    (data) =>
+      new Date(data.startTime).getTime() <
+      new Date(data.endTime).getTime(),
+    {
+      message: 'Start time must be earlier than end time',
+      path: ['startTime'],
+    },
+  );
+
+export type RescheduleAppointmentDto = z.infer<
+  typeof rescheduleAppointmentSchema
+>;

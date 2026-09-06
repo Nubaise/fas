@@ -15,7 +15,10 @@ import {
   NotificationJobStatus,
 } from '../notification-jobs/entities/notification-job.entity.js';
 import { StudentEntity } from '../students/entities/student.entity.js';
-import type { CreateAppointmentDto } from './dto/appointment.dto.js';
+import type {
+  CreateAppointmentDto,
+  RescheduleAppointmentDto,
+} from './dto/appointment.dto.js';
 import {
   AppointmentEntity,
   AppointmentStatus,
@@ -333,6 +336,355 @@ export class AppointmentsService {
       faculty.id,
       AppointmentStatus.REJECTED,
       'APPOINTMENT_REJECTED',
+    );
+  }
+
+  async cancel(
+    id: string,
+    currentUser: CurrentUser,
+  ): Promise<AppointmentEntity> {
+    if (currentUser.role !== 'FACULTY') {
+      throw new ForbiddenException(
+        'Only faculty can cancel appointments',
+      );
+    }
+
+    const faculty = await this.facultyRepository.findOne({
+      where: {
+        userId: currentUser.id,
+      },
+    });
+
+    if (!faculty) {
+      throw new NotFoundException(
+        'Faculty profile not found',
+      );
+    }
+
+    return this.dataSource.transaction(
+      async (manager) => {
+        const appointment = await manager.findOne(
+          AppointmentEntity,
+          {
+            where: { id },
+            lock: {
+              mode: 'pessimistic_write',
+            },
+          },
+        );
+
+        if (!appointment) {
+          throw new NotFoundException(
+            'Appointment not found',
+          );
+        }
+
+        if (appointment.facultyId !== faculty.id) {
+          throw new ForbiddenException(
+            'You can only manage your own appointments',
+          );
+        }
+
+        if (
+          appointment.status !==
+          AppointmentStatus.CONFIRMED
+        ) {
+          throw new ConflictException(
+            'Only confirmed appointments can be cancelled',
+          );
+        }
+
+        appointment.status = AppointmentStatus.CANCELLED;
+
+        const savedAppointment = await manager.save(
+          AppointmentEntity,
+          appointment,
+        );
+
+        const student = await manager.findOne(
+          StudentEntity,
+          {
+            where: {
+              id: appointment.studentId,
+            },
+          },
+        );
+
+        if (!student) {
+          throw new NotFoundException(
+            'Student profile not found',
+          );
+        }
+
+        const notificationJob = manager.create(
+          NotificationJobEntity,
+          {
+            type: 'APPOINTMENT_CANCELLED',
+            recipientId: student.userId,
+            payload: {
+              appointmentId: savedAppointment.id,
+            },
+            status: NotificationJobStatus.PENDING,
+            attempts: 0,
+            availableAt: new Date(),
+            processedAt: null,
+          },
+        );
+
+        await manager.save(
+          NotificationJobEntity,
+          notificationJob,
+        );
+
+        return savedAppointment;
+      },
+    );
+  }
+
+  async reschedule(
+    id: string,
+    data: RescheduleAppointmentDto,
+    currentUser: CurrentUser,
+  ): Promise<AppointmentEntity> {
+    if (currentUser.role !== 'FACULTY') {
+      throw new ForbiddenException(
+        'Only faculty can reschedule appointments',
+      );
+    }
+
+    const faculty = await this.facultyRepository.findOne({
+      where: {
+        userId: currentUser.id,
+      },
+    });
+
+    if (!faculty) {
+      throw new NotFoundException(
+        'Faculty profile not found',
+      );
+    }
+
+    const requestedStart = new Date(data.startTime);
+    const requestedEnd = new Date(data.endTime);
+    const date = data.startTime.slice(0, 10);
+
+    try {
+      return await this.dataSource.transaction(
+        async (manager) => {
+          const appointment = await manager.findOne(
+            AppointmentEntity,
+            {
+              where: { id },
+              lock: {
+                mode: 'pessimistic_write',
+              },
+            },
+          );
+
+          if (!appointment) {
+            throw new NotFoundException(
+              'Appointment not found',
+            );
+          }
+
+          if (appointment.facultyId !== faculty.id) {
+            throw new ForbiddenException(
+              'You can only manage your own appointments',
+            );
+          }
+
+          if (
+            appointment.status !==
+            AppointmentStatus.CONFIRMED
+          ) {
+            throw new ConflictException(
+              'Only confirmed appointments can be rescheduled',
+            );
+          }
+
+          const availableSlots =
+            await this.availabilitySchedulesService.getAvailableSlots(
+              faculty.id,
+              date,
+              appointment.id,
+            );
+
+          const requestedStartTime = this.extractTime(
+            data.startTime,
+          );
+          const requestedEndTime = this.extractTime(
+            data.endTime,
+          );
+
+          const isGeneratedSlot =
+            availableSlots.some(
+              (slot) =>
+                slot.startTime === requestedStartTime &&
+                slot.endTime === requestedEndTime,
+            );
+
+          if (!isGeneratedSlot) {
+            throw new ConflictException(
+              'Requested time is not an available appointment slot',
+            );
+          }
+
+          appointment.startTime = requestedStart;
+          appointment.endTime = requestedEnd;
+
+          const savedAppointment = await manager.save(
+            AppointmentEntity,
+            appointment,
+          );
+
+          const student = await manager.findOne(
+            StudentEntity,
+            {
+              where: {
+                id: appointment.studentId,
+              },
+            },
+          );
+
+          if (!student) {
+            throw new NotFoundException(
+              'Student profile not found',
+            );
+          }
+
+          const notificationJob = manager.create(
+            NotificationJobEntity,
+            {
+              type: 'APPOINTMENT_RESCHEDULED',
+              recipientId: student.userId,
+              payload: {
+                appointmentId: savedAppointment.id,
+              },
+              status: NotificationJobStatus.PENDING,
+              attempts: 0,
+              availableAt: new Date(),
+              processedAt: null,
+            },
+          );
+
+          await manager.save(
+            NotificationJobEntity,
+            notificationJob,
+          );
+
+          return savedAppointment;
+        },
+      );
+    } catch (error) {
+      if (this.isExclusionViolation(error)) {
+        throw new ConflictException(
+          'The appointment slot is no longer available',
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  async complete(
+    id: string,
+    currentUser: CurrentUser,
+  ): Promise<AppointmentEntity> {
+    if (currentUser.role !== 'FACULTY') {
+      throw new ForbiddenException(
+        'Only faculty can complete appointments',
+      );
+    }
+
+    const faculty = await this.facultyRepository.findOne({
+      where: {
+        userId: currentUser.id,
+      },
+    });
+
+    if (!faculty) {
+      throw new NotFoundException(
+        'Faculty profile not found',
+      );
+    }
+
+    return this.dataSource.transaction(
+      async (manager) => {
+        const appointment = await manager.findOne(
+          AppointmentEntity,
+          {
+            where: { id },
+            lock: {
+              mode: 'pessimistic_write',
+            },
+          },
+        );
+
+        if (!appointment) {
+          throw new NotFoundException(
+            'Appointment not found',
+          );
+        }
+
+        if (appointment.facultyId !== faculty.id) {
+          throw new ForbiddenException(
+            'You can only manage your own appointments',
+          );
+        }
+
+        if (
+          appointment.status !==
+          AppointmentStatus.CONFIRMED
+        ) {
+          throw new ConflictException(
+            'Only confirmed appointments can be completed',
+          );
+        }
+
+        appointment.status = AppointmentStatus.COMPLETED;
+
+        const savedAppointment = await manager.save(
+          AppointmentEntity,
+          appointment,
+        );
+
+        const student = await manager.findOne(
+          StudentEntity,
+          {
+            where: {
+              id: appointment.studentId,
+            },
+          },
+        );
+
+        if (!student) {
+          throw new NotFoundException(
+            'Student profile not found',
+          );
+        }
+
+        const notificationJob = manager.create(
+          NotificationJobEntity,
+          {
+            type: 'APPOINTMENT_COMPLETED',
+            recipientId: student.userId,
+            payload: {
+              appointmentId: savedAppointment.id,
+            },
+            status: NotificationJobStatus.PENDING,
+            attempts: 0,
+            availableAt: new Date(),
+            processedAt: null,
+          },
+        );
+
+        await manager.save(
+          NotificationJobEntity,
+          notificationJob,
+        );
+
+        return savedAppointment;
+      },
     );
   }
 

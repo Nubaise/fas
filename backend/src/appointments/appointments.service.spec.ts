@@ -685,6 +685,666 @@ describe('AppointmentsService', () => {
     });
   });
 
+  describe('cancel', () => {
+    const confirmedAppointment = {
+      id: 'appointment-1',
+      studentId: 'student-1',
+      facultyId: 'faculty-1',
+      status: AppointmentStatus.CONFIRMED,
+      startTime: new Date('2026-09-07T10:00:00.000Z'),
+      endTime: new Date('2026-09-07T10:30:00.000Z'),
+      reason: 'Discuss project',
+    };
+
+    const setupFaculty = () => {
+      facultyRepository.findOne.mockResolvedValue({
+        id: 'faculty-1',
+        userId: 'faculty-user',
+      });
+    };
+
+    it('should cancel a confirmed appointment and create a notification job', async () => {
+      setupFaculty();
+
+      const appointment = { ...confirmedAppointment };
+      const savedAppointment = {
+        ...appointment,
+        status: AppointmentStatus.CANCELLED,
+      };
+
+      manager.findOne
+        .mockResolvedValueOnce(appointment)
+        .mockResolvedValueOnce({
+          id: 'student-1',
+          userId: 'student-user',
+        });
+      manager.save
+        .mockResolvedValueOnce(savedAppointment)
+        .mockResolvedValueOnce({});
+      manager.create.mockReturnValue({});
+
+      const result = await service.cancel('appointment-1', {
+        id: 'faculty-user',
+        role: 'FACULTY',
+      });
+
+      expect(result).toBe(savedAppointment);
+      expect(appointment.status).toBe(AppointmentStatus.CANCELLED);
+      expect(manager.findOne).toHaveBeenNthCalledWith(
+        1,
+        AppointmentEntity,
+        {
+          where: { id: 'appointment-1' },
+          lock: { mode: 'pessimistic_write' },
+        },
+      );
+      expect(manager.create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          type: 'APPOINTMENT_CANCELLED',
+          recipientId: 'student-user',
+          payload: { appointmentId: 'appointment-1' },
+        }),
+      );
+      expect(manager.save).toHaveBeenCalledTimes(2);
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should forbid a student from cancelling an appointment', async () => {
+      await expect(
+        service.cancel('appointment-1', {
+          id: 'student-user',
+          role: 'STUDENT',
+        }),
+      ).rejects.toThrow('Only faculty can cancel appointments');
+
+      expect(facultyRepository.findOne).not.toHaveBeenCalled();
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('should reject cancellation when the faculty profile is missing', async () => {
+      facultyRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.cancel('appointment-1', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('Faculty profile not found');
+
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('should return not found when cancelling a missing appointment', async () => {
+      setupFaculty();
+      manager.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.cancel('missing-id', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('Appointment not found');
+    });
+
+    it('should forbid a faculty member from cancelling another faculty appointment', async () => {
+      facultyRepository.findOne.mockResolvedValue({
+        id: 'faculty-2',
+        userId: 'faculty-user',
+      });
+      manager.findOne.mockResolvedValue({
+        ...confirmedAppointment,
+      });
+
+      await expect(
+        service.cancel('appointment-1', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('You can only manage your own appointments');
+    });
+
+    it('should reject cancelling a non-confirmed appointment', async () => {
+      setupFaculty();
+      manager.findOne.mockResolvedValue({
+        ...confirmedAppointment,
+        status: AppointmentStatus.PENDING,
+      });
+
+      await expect(
+        service.cancel('appointment-1', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('Only confirmed appointments can be cancelled');
+    });
+
+    it('should propagate student profile failure and abort notification creation', async () => {
+      setupFaculty();
+
+      manager.findOne
+        .mockResolvedValueOnce({ ...confirmedAppointment })
+        .mockResolvedValueOnce(null);
+      manager.save.mockResolvedValueOnce({
+        ...confirmedAppointment,
+        status: AppointmentStatus.CANCELLED,
+      });
+
+      await expect(
+        service.cancel('appointment-1', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('Student profile not found');
+
+      expect(manager.create).not.toHaveBeenCalled();
+      expect(manager.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('should propagate notification save failure', async () => {
+      setupFaculty();
+
+      manager.findOne
+        .mockResolvedValueOnce({ ...confirmedAppointment })
+        .mockResolvedValueOnce({
+          id: 'student-1',
+          userId: 'student-user',
+        });
+      manager.save
+        .mockResolvedValueOnce({
+          ...confirmedAppointment,
+          status: AppointmentStatus.CANCELLED,
+        })
+        .mockRejectedValueOnce(new Error('notification save failed'));
+      manager.create.mockReturnValue({});
+
+      await expect(
+        service.cancel('appointment-1', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('notification save failed');
+
+      expect(manager.save).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('reschedule', () => {
+    const confirmedAppointment = {
+      id: 'appointment-1',
+      studentId: 'student-1',
+      facultyId: 'faculty-1',
+      status: AppointmentStatus.CONFIRMED,
+      startTime: new Date('2026-09-07T10:00:00.000Z'),
+      endTime: new Date('2026-09-07T10:30:00.000Z'),
+      reason: 'Discuss project',
+    };
+
+    const dto = {
+      startTime: '2026-09-07T11:00:00.000Z',
+      endTime: '2026-09-07T11:30:00.000Z',
+    };
+
+    const setupFaculty = () => {
+      facultyRepository.findOne.mockResolvedValue({
+        id: 'faculty-1',
+        userId: 'faculty-user',
+      });
+    };
+
+    const setupRescheduleMocks = () => {
+      setupFaculty();
+      const appointment = { ...confirmedAppointment };
+
+      manager.findOne
+        .mockResolvedValueOnce(appointment)
+        .mockResolvedValueOnce({
+          id: 'student-1',
+          userId: 'student-user',
+        });
+
+      availabilitySchedulesService.getAvailableSlots.mockResolvedValue([
+        { startTime: '11:00', endTime: '11:30' },
+      ]);
+
+      const savedAppointment = {
+        ...appointment,
+        startTime: new Date(dto.startTime),
+        endTime: new Date(dto.endTime),
+      };
+
+      manager.save
+        .mockResolvedValueOnce(savedAppointment)
+        .mockResolvedValueOnce({});
+      manager.create.mockReturnValue({});
+
+      return { appointment, savedAppointment };
+    };
+
+    it('should reschedule the same confirmed appointment and create a notification job', async () => {
+      const { appointment, savedAppointment } = setupRescheduleMocks();
+
+      const result = await service.reschedule(
+        'appointment-1',
+        dto,
+        {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        },
+      );
+
+      expect(result).toBe(savedAppointment);
+      expect(appointment.id).toBe('appointment-1');
+      expect(appointment.studentId).toBe('student-1');
+      expect(appointment.facultyId).toBe('faculty-1');
+      expect(appointment.reason).toBe('Discuss project');
+      expect(appointment.status).toBe(AppointmentStatus.CONFIRMED);
+      expect(appointment.startTime).toEqual(new Date(dto.startTime));
+      expect(appointment.endTime).toEqual(new Date(dto.endTime));
+
+      expect(
+        availabilitySchedulesService.getAvailableSlots,
+      ).toHaveBeenCalledWith(
+        'faculty-1',
+        '2026-09-07',
+        'appointment-1',
+      );
+
+      expect(manager.create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          type: 'APPOINTMENT_RESCHEDULED',
+          recipientId: 'student-user',
+          payload: { appointmentId: 'appointment-1' },
+        }),
+      );
+      expect(manager.save).toHaveBeenCalledTimes(2);
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should forbid a student from rescheduling an appointment', async () => {
+      await expect(
+        service.reschedule('appointment-1', dto, {
+          id: 'student-user',
+          role: 'STUDENT',
+        }),
+      ).rejects.toThrow('Only faculty can reschedule appointments');
+
+      expect(facultyRepository.findOne).not.toHaveBeenCalled();
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('should reject rescheduling when the faculty profile is missing', async () => {
+      facultyRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.reschedule('appointment-1', dto, {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('Faculty profile not found');
+
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('should return not found when rescheduling a missing appointment', async () => {
+      setupFaculty();
+      manager.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.reschedule('missing-id', dto, {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('Appointment not found');
+    });
+
+    it('should forbid a faculty member from rescheduling another faculty appointment', async () => {
+      facultyRepository.findOne.mockResolvedValue({
+        id: 'faculty-2',
+        userId: 'faculty-user',
+      });
+      manager.findOne.mockResolvedValue({
+        ...confirmedAppointment,
+      });
+
+      await expect(
+        service.reschedule('appointment-1', dto, {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('You can only manage your own appointments');
+    });
+
+    it('should reject rescheduling a non-confirmed appointment', async () => {
+      setupFaculty();
+      manager.findOne.mockResolvedValue({
+        ...confirmedAppointment,
+        status: AppointmentStatus.PENDING,
+      });
+
+      await expect(
+        service.reschedule('appointment-1', dto, {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow(
+        'Only confirmed appointments can be rescheduled',
+      );
+
+      expect(
+        availabilitySchedulesService.getAvailableSlots,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should reject a time that is not a generated slot', async () => {
+      setupFaculty();
+      manager.findOne.mockResolvedValue({
+        ...confirmedAppointment,
+      });
+      availabilitySchedulesService.getAvailableSlots.mockResolvedValue([
+        { startTime: '11:00', endTime: '11:30' },
+      ]);
+
+      await expect(
+        service.reschedule(
+          'appointment-1',
+          {
+            startTime: '2026-09-07T11:05:00.000Z',
+            endTime: '2026-09-07T11:35:00.000Z',
+          },
+          {
+            id: 'faculty-user',
+            role: 'FACULTY',
+          },
+        ),
+      ).rejects.toThrow(
+        'Requested time is not an available appointment slot',
+      );
+
+      expect(manager.save).not.toHaveBeenCalled();
+    });
+
+    it('should pass the current appointment id so its own slot does not block rescheduling', async () => {
+      setupFaculty();
+      manager.findOne.mockResolvedValue({
+        ...confirmedAppointment,
+      });
+      availabilitySchedulesService.getAvailableSlots.mockResolvedValue([
+        { startTime: '11:00', endTime: '11:30' },
+      ]);
+
+      manager.save.mockResolvedValue({
+        ...confirmedAppointment,
+        startTime: new Date(dto.startTime),
+        endTime: new Date(dto.endTime),
+      });
+
+      await service.reschedule('appointment-1', dto, {
+        id: 'faculty-user',
+        role: 'FACULTY',
+      });
+
+      expect(
+        availabilitySchedulesService.getAvailableSlots,
+      ).toHaveBeenCalledWith(
+        'faculty-1',
+        '2026-09-07',
+        'appointment-1',
+      );
+    });
+
+    it('should map a database exclusion violation to a conflict', async () => {
+      setupRescheduleMocks();
+      dataSource.transaction.mockRejectedValueOnce({
+        code: '23P01',
+      });
+
+      await expect(
+        service.reschedule('appointment-1', dto, {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('The appointment slot is no longer available');
+    });
+
+    it('should propagate student profile failure and abort notification creation', async () => {
+      setupFaculty();
+      manager.findOne
+        .mockResolvedValueOnce({ ...confirmedAppointment })
+        .mockResolvedValueOnce(null);
+      availabilitySchedulesService.getAvailableSlots.mockResolvedValue([
+        { startTime: '11:00', endTime: '11:30' },
+      ]);
+      manager.save.mockResolvedValueOnce({
+        ...confirmedAppointment,
+        startTime: new Date(dto.startTime),
+        endTime: new Date(dto.endTime),
+      });
+
+      await expect(
+        service.reschedule('appointment-1', dto, {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('Student profile not found');
+
+      expect(manager.create).not.toHaveBeenCalled();
+      expect(manager.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('should propagate notification save failure', async () => {
+      setupFaculty();
+      manager.findOne
+        .mockResolvedValueOnce({ ...confirmedAppointment })
+        .mockResolvedValueOnce({
+          id: 'student-1',
+          userId: 'student-user',
+        });
+      availabilitySchedulesService.getAvailableSlots.mockResolvedValue([
+        { startTime: '11:00', endTime: '11:30' },
+      ]);
+      manager.save
+        .mockResolvedValueOnce({
+          ...confirmedAppointment,
+          startTime: new Date(dto.startTime),
+          endTime: new Date(dto.endTime),
+        })
+        .mockRejectedValueOnce(new Error('notification save failed'));
+      manager.create.mockReturnValue({});
+
+      await expect(
+        service.reschedule('appointment-1', dto, {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('notification save failed');
+
+      expect(manager.save).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('complete', () => {
+    const confirmedAppointment = {
+      id: 'appointment-1',
+      studentId: 'student-1',
+      facultyId: 'faculty-1',
+      status: AppointmentStatus.CONFIRMED,
+    };
+
+    const setupFaculty = () => {
+      facultyRepository.findOne.mockResolvedValue({
+        id: 'faculty-1',
+        userId: 'faculty-user',
+      });
+    };
+
+    it('should complete a confirmed appointment and create a notification job', async () => {
+      setupFaculty();
+
+      const appointment = { ...confirmedAppointment };
+      const savedAppointment = {
+        ...appointment,
+        status: AppointmentStatus.COMPLETED,
+      };
+
+      manager.findOne
+        .mockResolvedValueOnce(appointment)
+        .mockResolvedValueOnce({
+          id: 'student-1',
+          userId: 'student-user',
+        });
+      manager.save
+        .mockResolvedValueOnce(savedAppointment)
+        .mockResolvedValueOnce({});
+      manager.create.mockReturnValue({});
+
+      const result = await service.complete('appointment-1', {
+        id: 'faculty-user',
+        role: 'FACULTY',
+      });
+
+      expect(result).toBe(savedAppointment);
+      expect(appointment.status).toBe(AppointmentStatus.COMPLETED);
+      expect(manager.findOne).toHaveBeenNthCalledWith(
+        1,
+        AppointmentEntity,
+        {
+          where: { id: 'appointment-1' },
+          lock: { mode: 'pessimistic_write' },
+        },
+      );
+      expect(manager.create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          type: 'APPOINTMENT_COMPLETED',
+          recipientId: 'student-user',
+          payload: { appointmentId: 'appointment-1' },
+        }),
+      );
+      expect(manager.save).toHaveBeenCalledTimes(2);
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should forbid a student from completing an appointment', async () => {
+      await expect(
+        service.complete('appointment-1', {
+          id: 'student-user',
+          role: 'STUDENT',
+        }),
+      ).rejects.toThrow('Only faculty can complete appointments');
+
+      expect(facultyRepository.findOne).not.toHaveBeenCalled();
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('should reject completion when the faculty profile is missing', async () => {
+      facultyRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.complete('appointment-1', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('Faculty profile not found');
+
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('should return not found when completing a missing appointment', async () => {
+      setupFaculty();
+      manager.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.complete('missing-id', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('Appointment not found');
+    });
+
+    it('should forbid a faculty member from completing another faculty appointment', async () => {
+      facultyRepository.findOne.mockResolvedValue({
+        id: 'faculty-2',
+        userId: 'faculty-user',
+      });
+      manager.findOne.mockResolvedValue({
+        ...confirmedAppointment,
+      });
+
+      await expect(
+        service.complete('appointment-1', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('You can only manage your own appointments');
+    });
+
+    it('should reject completing a non-confirmed appointment', async () => {
+      setupFaculty();
+      manager.findOne.mockResolvedValue({
+        ...confirmedAppointment,
+        status: AppointmentStatus.CANCELLED,
+      });
+
+      await expect(
+        service.complete('appointment-1', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('Only confirmed appointments can be completed');
+    });
+
+    it('should propagate student profile failure and abort notification creation', async () => {
+      setupFaculty();
+
+      manager.findOne
+        .mockResolvedValueOnce({ ...confirmedAppointment })
+        .mockResolvedValueOnce(null);
+      manager.save.mockResolvedValueOnce({
+        ...confirmedAppointment,
+        status: AppointmentStatus.COMPLETED,
+      });
+
+      await expect(
+        service.complete('appointment-1', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('Student profile not found');
+
+      expect(manager.create).not.toHaveBeenCalled();
+      expect(manager.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('should propagate notification save failure', async () => {
+      setupFaculty();
+
+      manager.findOne
+        .mockResolvedValueOnce({ ...confirmedAppointment })
+        .mockResolvedValueOnce({
+          id: 'student-1',
+          userId: 'student-user',
+        });
+      manager.save
+        .mockResolvedValueOnce({
+          ...confirmedAppointment,
+          status: AppointmentStatus.COMPLETED,
+        })
+        .mockRejectedValueOnce(new Error('notification save failed'));
+      manager.create.mockReturnValue({});
+
+      await expect(
+        service.complete('appointment-1', {
+          id: 'faculty-user',
+          role: 'FACULTY',
+        }),
+      ).rejects.toThrow('notification save failed');
+
+      expect(manager.save).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('reject', () => {
     const pendingAppointment = {
       id: 'appointment-1',
