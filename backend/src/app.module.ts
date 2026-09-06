@@ -32,6 +32,7 @@ import { RolesGuard } from './auth/guards/roles.guard.js';
         type: 'postgres',
         url: configService.getOrThrow<string>('DATABASE_URL'),
         synchronize: false,
+        autoLoadEntities: true,
       }),
     }),
 
