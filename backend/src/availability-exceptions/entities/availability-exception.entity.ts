@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-import { FacultyEntity } from '../../faculty/entities/faculty.entity';
+import { FacultyEntity } from '../../faculty/entities/faculty.entity.js';
 
 @Entity('availability_exceptions')
 export class AvailabilityExceptionEntity {

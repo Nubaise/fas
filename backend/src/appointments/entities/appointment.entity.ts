@@ -8,8 +8,8 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import { StudentEntity } from '../../students/entities/student.entity';
-import { FacultyEntity } from '../../faculty/entities/faculty.entity';
+import { StudentEntity } from '../../students/entities/student.entity.js';
+import { FacultyEntity } from '../../faculty/entities/faculty.entity.js';
 
 export enum AppointmentStatus {
   PENDING = 'PENDING',

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { NotificationJobEntity } from './entities/notification-job.entity';
+import { NotificationJobEntity } from './entities/notification-job.entity.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([NotificationJobEntity])],

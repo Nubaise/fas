@@ -8,7 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import { UserEntity } from '../../users/entities/user.entity';
+import { UserEntity } from '../../users/entities/user.entity.js';
 
 export enum NotificationJobStatus {
   PENDING = 'PENDING',

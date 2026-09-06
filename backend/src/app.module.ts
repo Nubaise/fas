@@ -1,18 +1,22 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { envSchema } from './config/env.validation';
+import { APP_GUARD } from '@nestjs/core';
+import { envSchema } from './config/env.validation.js';
 
-import { AuthModule } from './auth/auth.module';
-import { UsersModule } from './users/users.module';
-import { DepartmentsModule } from './departments/departments.module';
-import { StudentsModule } from './students/students.module';
-import { FacultyModule } from './faculty/faculty.module';
-import { AvailabilitySchedulesModule } from './availability-schedules/availability-schedules.module';
-import { AvailabilityExceptionsModule } from './availability-exceptions/availability-exceptions.module';
-import { AppointmentsModule } from './appointments/appointments.module';
-import { NotificationJobsModule } from './notification-jobs/notification-jobs.module';
-import { NotificationsModule } from './notifications/notifications.module';
+import { AuthModule } from './auth/auth.module.js';
+import { UsersModule } from './users/users.module.js';
+import { DepartmentsModule } from './departments/departments.module.js';
+import { StudentsModule } from './students/students.module.js';
+import { FacultyModule } from './faculty/faculty.module.js';
+import { AvailabilitySchedulesModule } from './availability-schedules/availability-schedules.module.js';
+import { AvailabilityExceptionsModule } from './availability-exceptions/availability-exceptions.module.js';
+import { AppointmentsModule } from './appointments/appointments.module.js';
+import { NotificationJobsModule } from './notification-jobs/notification-jobs.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
+
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard.js';
+import { RolesGuard } from './auth/guards/roles.guard.js';
 
 @Module({
   imports: [
@@ -41,6 +45,16 @@ import { NotificationsModule } from './notifications/notifications.module';
     AppointmentsModule,
     NotificationJobsModule,
     NotificationsModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
   ],
 })
 export class AppModule {}

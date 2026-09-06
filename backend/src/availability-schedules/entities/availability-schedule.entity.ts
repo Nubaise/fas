@@ -8,7 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import { FacultyEntity } from '../../faculty/entities/faculty.entity';
+import { FacultyEntity } from '../../faculty/entities/faculty.entity.js';
 
 @Entity('availability_schedules')
 export class AvailabilityScheduleEntity {
