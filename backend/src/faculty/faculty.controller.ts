@@ -10,11 +10,18 @@ import {
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
-import { FacultyService } from './faculty.service.js';
+import type { OnboardFacultyDto } from './dto/onboard-faculty.dto.js';
+import type {
+  BulkOnboardFacultyDto,
+} from './dto/bulk-onboard-faculty.dto.js';
 import {
-  type CreateFacultyDto,
-  type UpdateFacultyDto,
+  bulkOnboardFacultySchema,
+} from './dto/bulk-onboard-faculty.dto.js';
+import type {
+  CreateFacultyDto,
+  UpdateFacultyDto,
 } from './dto/faculty.dto.js';
+import { FacultyService } from './faculty.service.js';
 
 type CurrentUserPayload = {
   id: string;
@@ -46,6 +53,25 @@ export class FacultyController {
     @Body() body: CreateFacultyDto,
   ) {
     return this.facultyService.create(body);
+  }
+
+  @Post('bulk-onboard')
+  @Version('1')
+  @Roles('ADMIN')
+  async bulkOnboard(
+    @Body({ schema: bulkOnboardFacultySchema })
+    body: BulkOnboardFacultyDto,
+  ) {
+    return this.facultyService.bulkOnboard(body);
+  }
+
+  @Post('onboard')
+  @Version('1')
+  @Roles('ADMIN')
+  async onboard(
+    @Body() body: OnboardFacultyDto,
+  ) {
+    return this.facultyService.onboard(body);
   }
 
   @Patch(':id')

@@ -10,7 +10,9 @@ import {
 } from '@nestjs/common';
 
 import { Roles } from '../auth/decorators/roles.decorator.js';
+
 import { DepartmentsService } from './departments.service.js';
+
 import {
   createDepartmentSchema,
   updateDepartmentSchema,
@@ -40,7 +42,7 @@ export class DepartmentsController {
   @Version('1')
   @Roles('ADMIN')
   async create(
-    @Body(createDepartmentSchema) body: CreateDepartmentDto,
+    @Body({ schema: createDepartmentSchema }) body: CreateDepartmentDto,
   ) {
     return this.departmentsService.create(body);
   }
@@ -50,7 +52,7 @@ export class DepartmentsController {
   @Roles('ADMIN')
   async update(
     @Param('id') id: string,
-    @Body(updateDepartmentSchema) body: UpdateDepartmentDto,
+    @Body({ schema: updateDepartmentSchema }) body: UpdateDepartmentDto,
   ) {
     return this.departmentsService.update(id, body);
   }

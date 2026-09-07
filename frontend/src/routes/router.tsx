@@ -18,6 +18,15 @@ import { StudentBookingPage } from "@/features/appointments/StudentBookingPage"
 import { StudentAppointmentsPage } from "@/features/appointments/StudentAppointmentsPage"
 import { StudentAppointmentDetailPage } from "@/features/appointments/StudentAppointmentDetailPage"
 
+import { AdminDashboardPage } from "@/features/admin/AdminDashboardPage"
+import { AdminFacultyPage } from "@/features/admin/AdminFacultyPage"
+import { AdminFacultyDetailPage } from "@/features/admin/AdminFacultyDetailPage"
+import { AdminFacultyFormPage } from "@/features/admin/AdminFacultyFormPage"
+import { AdminDepartmentsPage } from "@/features/admin/AdminDepartmentsPage"
+import { AdminFacultyAvailabilityPage } from "@/features/admin/AdminFacultyAvailabilityPage"
+import { AdminAppointmentsPage } from "@/features/admin/AdminAppointmentsPage"
+import { AdminAppointmentDetailPage } from "@/features/admin/AdminAppointmentDetailPage"
+
 import { ProtectedRoute } from "./guards/ProtectedRoute"
 import { RoleRoute } from "./guards/RoleRoute"
 import { routes } from "./routes"
@@ -100,7 +109,39 @@ export const router = createBrowserRouter([
                 children: [
                   {
                     path: routes.admin.slice(1),
-                    element: <div>Admin Area</div>,
+                    element: <AdminDashboardPage />,
+                  },
+                  {
+                    path: `${routes.admin.slice(1)}/faculty`,
+                    element: <AdminFacultyPage />,
+                  },
+                  {
+                    path: `${routes.admin.slice(1)}/faculty/:facultyId`,
+                    element: <AdminFacultyDetailPage />,
+                  },
+                  {
+                    path: `${routes.admin.slice(1)}/faculty/new`,
+                    element: <AdminFacultyFormPage />,
+                  },
+                  {
+                    path: `${routes.admin.slice(1)}/faculty/:facultyId/edit`,
+                    element: <AdminFacultyFormPage />,
+                  },
+                  {
+                    path: `${routes.admin.slice(1)}/faculty/:facultyId/availability`,
+                    element: <AdminFacultyAvailabilityPage />,
+                  },
+                  {
+                    path: `${routes.admin.slice(1)}/departments`,
+                    element: <AdminDepartmentsPage />,
+                  },
+                  {
+                    path: `${routes.admin.slice(1)}/appointments`,
+                    element: <AdminAppointmentsPage />,
+                  },
+                  {
+                    path: `${routes.admin.slice(1)}/appointments/:appointmentId`,
+                    element: <AdminAppointmentDetailPage />,
                   },
                 ],
               },

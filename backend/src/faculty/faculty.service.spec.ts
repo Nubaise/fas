@@ -11,6 +11,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  DataSource,
   FindManyOptions,
   FindOneOptions,
   Repository,
@@ -52,6 +53,10 @@ type UsersServiceMock = {
   findById: jest.MockedFunction<
     (id: string) => Promise<UserEntity | null>
   >;
+
+  findByEmail: jest.MockedFunction<
+    (email: string) => Promise<UserEntity | null>
+  >;
 };
 
 type DepartmentsServiceMock = {
@@ -60,11 +65,32 @@ type DepartmentsServiceMock = {
   >;
 };
 
+/*
+ * These mocks intentionally use ReturnType<typeof jest.fn>.
+ *
+ * TypeORM's DataSource.transaction() and EntityManager.create()
+ * are heavily generic. Trying to reproduce those generic signatures
+ * in a unit-test mock causes Jest's TypeScript definitions to infer
+ * parameters as `never` or `unknown`.
+ *
+ * The test only needs the runtime behavior, so these mocks remain
+ * intentionally lightweight.
+ */
+type TransactionManagerMock = {
+  create: ReturnType<typeof jest.fn>;
+  save: ReturnType<typeof jest.fn>;
+};
+
+type DataSourceMock = {
+  transaction: ReturnType<typeof jest.fn>;
+};
+
 describe('FacultyService', () => {
   let service: FacultyService;
   let repository: FacultyRepositoryMock;
   let usersService: UsersServiceMock;
   let departmentsService: DepartmentsServiceMock;
+  let dataSource: DataSourceMock;
 
   beforeEach(() => {
     repository = {
@@ -97,6 +123,10 @@ describe('FacultyService', () => {
       findById: jest.fn<
         (id: string) => Promise<UserEntity | null>
       >(),
+
+      findByEmail: jest.fn<
+        (email: string) => Promise<UserEntity | null>
+      >(),
     };
 
     departmentsService = {
@@ -105,10 +135,15 @@ describe('FacultyService', () => {
       >(),
     };
 
+    dataSource = {
+      transaction: jest.fn(),
+    };
+
     service = new FacultyService(
       repository as unknown as Repository<FacultyEntity>,
       usersService as unknown as UsersService,
       departmentsService as unknown as DepartmentsService,
+      dataSource as unknown as DataSource,
     );
   });
 
@@ -184,12 +219,15 @@ describe('FacultyService', () => {
     } as FacultyEntity;
 
     usersService.findById.mockResolvedValue(user);
+
     repository.findOne
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null);
+
     departmentsService.findById.mockResolvedValue({
       id: 'dept-1',
     });
+
     repository.create.mockReturnValue(faculty);
     repository.save.mockResolvedValue(faculty);
 
@@ -337,9 +375,11 @@ describe('FacultyService', () => {
     } as FacultyEntity;
 
     usersService.findById.mockResolvedValue(user);
+
     repository.findOne
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(existingFaculty);
+
     departmentsService.findById.mockResolvedValue({
       id: 'dept-1',
     });
@@ -356,6 +396,316 @@ describe('FacultyService', () => {
 
     expect(repository.create).not.toHaveBeenCalled();
     expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it('onboards a faculty user and profile in one transaction', async () => {
+    const department = {
+      id: 'dept-1',
+    };
+
+    const savedUser = {
+      id: 'user-1',
+      email: 'faculty@example.com',
+      passwordHash: 'hashed-password',
+      role: 'FACULTY',
+      isActive: true,
+    } as UserEntity;
+
+    const faculty = {
+      id: 'faculty-1',
+      userId: 'user-1',
+      employeeNumber: 'EMP001',
+      firstName: 'Alice',
+      lastName: 'Brown',
+      departmentId: 'dept-1',
+    } as FacultyEntity;
+
+    const transactionManager: TransactionManagerMock = {
+      create: jest.fn(),
+      save: jest.fn(),
+    };
+
+    departmentsService.findById.mockResolvedValue(department);
+    usersService.findByEmail.mockResolvedValue(null);
+
+    transactionManager.create
+      .mockReturnValueOnce(savedUser)
+      .mockReturnValueOnce(faculty);
+
+    transactionManager.save
+      .mockResolvedValueOnce(savedUser)
+      .mockResolvedValueOnce(faculty);
+
+    dataSource.transaction.mockImplementation(
+      (...args: unknown[]) => {
+        const callback = args[0] as (
+          manager: TransactionManagerMock,
+        ) => Promise<unknown>;
+
+        return callback(transactionManager);
+      },
+    );
+
+    await expect(
+      service.onboard({
+        email: 'faculty@example.com',
+        password: 'password123',
+        employeeNumber: 'EMP001',
+        firstName: 'Alice',
+        lastName: 'Brown',
+        departmentId: 'dept-1',
+      }),
+    ).resolves.toEqual(faculty);
+
+    expect(departmentsService.findById).toHaveBeenCalledWith(
+      'dept-1',
+    );
+
+    expect(usersService.findByEmail).toHaveBeenCalledWith(
+      'faculty@example.com',
+    );
+
+    expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+
+    expect(transactionManager.create).toHaveBeenCalledTimes(
+      2,
+    );
+
+    expect(transactionManager.save).toHaveBeenCalledTimes(2);
+
+    const firstCreateCall =
+      transactionManager.create.mock.calls[0] as [
+        typeof UserEntity,
+        Partial<UserEntity>,
+      ];
+
+    expect(firstCreateCall[0]).toBe(UserEntity);
+
+    expect(firstCreateCall[1]).toMatchObject({
+      email: 'faculty@example.com',
+      role: 'FACULTY',
+      isActive: true,
+    });
+
+    expect(firstCreateCall[1].passwordHash).not.toBe(
+      'password123',
+    );
+
+    expect(firstCreateCall[1].passwordHash).toEqual(
+      expect.any(String),
+    );
+
+    const secondCreateCall =
+      transactionManager.create.mock.calls[1] as [
+        typeof FacultyEntity,
+        Partial<FacultyEntity>,
+      ];
+
+    expect(secondCreateCall[0]).toBe(FacultyEntity);
+
+    expect(secondCreateCall[1]).toEqual({
+      userId: 'user-1',
+      employeeNumber: 'EMP001',
+      firstName: 'Alice',
+      lastName: 'Brown',
+      departmentId: 'dept-1',
+    });
+  });
+
+  it('rejects onboarding when the email already exists', async () => {
+    const existingUser = {
+      id: 'user-1',
+      email: 'faculty@example.com',
+      passwordHash: 'hash',
+      role: 'FACULTY',
+      isActive: true,
+    } as UserEntity;
+
+    departmentsService.findById.mockResolvedValue({
+      id: 'dept-1',
+    });
+
+    usersService.findByEmail.mockResolvedValue(existingUser);
+
+    await expect(
+      service.onboard({
+        email: 'faculty@example.com',
+        password: 'password123',
+        employeeNumber: 'EMP001',
+        firstName: 'Alice',
+        lastName: 'Brown',
+        departmentId: 'dept-1',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects onboarding when the employee number already exists', async () => {
+    const existingFaculty = {
+      id: 'faculty-2',
+      userId: 'user-2',
+      employeeNumber: 'EMP001',
+    } as FacultyEntity;
+
+    departmentsService.findById.mockResolvedValue({
+      id: 'dept-1',
+    });
+
+    usersService.findByEmail.mockResolvedValue(null);
+
+    repository.findOne.mockResolvedValue(existingFaculty);
+
+    await expect(
+      service.onboard({
+        email: 'faculty@example.com',
+        password: 'password123',
+        employeeNumber: 'EMP001',
+        firstName: 'Alice',
+        lastName: 'Brown',
+        departmentId: 'dept-1',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects onboarding when the department does not exist', async () => {
+    departmentsService.findById.mockRejectedValue(
+      new NotFoundException('Department not found'),
+    );
+
+    await expect(
+      service.onboard({
+        email: 'faculty@example.com',
+        password: 'password123',
+        employeeNumber: 'EMP001',
+        firstName: 'Alice',
+        lastName: 'Brown',
+        departmentId: 'missing-dept',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(usersService.findByEmail).not.toHaveBeenCalled();
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('converts an onboarding unique constraint violation into a conflict', async () => {
+    departmentsService.findById.mockResolvedValue({
+      id: 'dept-1',
+    });
+
+    usersService.findByEmail.mockResolvedValue(null);
+    repository.findOne.mockResolvedValue(null);
+
+    const transactionManager: TransactionManagerMock = {
+      create: jest.fn(),
+      save: jest.fn(),
+    };
+
+    const user = {
+      id: 'user-1',
+      email: 'faculty@example.com',
+      passwordHash: 'hashed-password',
+      role: 'FACULTY',
+      isActive: true,
+    } as UserEntity;
+
+    transactionManager.create.mockReturnValue(user);
+
+    transactionManager.save
+      .mockResolvedValueOnce(user)
+      .mockRejectedValueOnce({
+        code: '23505',
+      });
+
+    dataSource.transaction.mockImplementation(
+      (...args: unknown[]) => {
+        const callback = args[0] as (
+          manager: TransactionManagerMock,
+        ) => Promise<unknown>;
+
+        return callback(transactionManager);
+      },
+    );
+
+    await expect(
+      service.onboard({
+        email: 'faculty@example.com',
+        password: 'password123',
+        employeeNumber: 'EMP001',
+        firstName: 'Alice',
+        lastName: 'Brown',
+        departmentId: 'dept-1',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rolls back onboarding when faculty creation fails', async () => {
+    departmentsService.findById.mockResolvedValue({
+      id: 'dept-1',
+    });
+
+    usersService.findByEmail.mockResolvedValue(null);
+    repository.findOne.mockResolvedValue(null);
+
+    const transactionManager: TransactionManagerMock = {
+      create: jest.fn(),
+      save: jest.fn(),
+    };
+
+    const user = {
+      id: 'user-1',
+      email: 'faculty@example.com',
+      passwordHash: 'hashed-password',
+      role: 'FACULTY',
+      isActive: true,
+    } as UserEntity;
+
+    const faculty = {
+      id: 'faculty-1',
+      userId: 'user-1',
+      employeeNumber: 'EMP001',
+      firstName: 'Alice',
+      lastName: 'Brown',
+      departmentId: 'dept-1',
+    } as FacultyEntity;
+
+    const transactionError = new Error(
+      'Faculty creation failed',
+    );
+
+    transactionManager.create
+      .mockReturnValueOnce(user)
+      .mockReturnValueOnce(faculty);
+
+    transactionManager.save
+      .mockResolvedValueOnce(user)
+      .mockRejectedValueOnce(transactionError);
+
+    dataSource.transaction.mockImplementation(
+      (...args: unknown[]) => {
+        const callback = args[0] as (
+          manager: TransactionManagerMock,
+        ) => Promise<unknown>;
+
+        return callback(transactionManager);
+      },
+    );
+
+    await expect(
+      service.onboard({
+        email: 'faculty@example.com',
+        password: 'password123',
+        employeeNumber: 'EMP001',
+        firstName: 'Alice',
+        lastName: 'Brown',
+        departmentId: 'dept-1',
+      }),
+    ).rejects.toThrow('Faculty creation failed');
+
+    expect(transactionManager.save).toHaveBeenCalledTimes(2);
+    expect(dataSource.transaction).toHaveBeenCalledTimes(1);
   });
 
   it('allows an admin to update any faculty profile', async () => {
@@ -418,6 +768,7 @@ describe('FacultyService', () => {
     } as FacultyEntity;
 
     repository.findOne.mockResolvedValue(faculty);
+
     repository.save.mockResolvedValue({
       ...faculty,
       firstName: 'Alicia',
@@ -573,6 +924,7 @@ describe('FacultyService', () => {
     } as FacultyEntity;
 
     repository.findOne.mockResolvedValue(faculty);
+
     departmentsService.findById.mockRejectedValue(
       new NotFoundException('Department not found'),
     );
@@ -612,6 +964,7 @@ describe('FacultyService', () => {
     } as UserEntity;
 
     usersService.findById.mockResolvedValue(user);
+
     repository.findOne
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null);
