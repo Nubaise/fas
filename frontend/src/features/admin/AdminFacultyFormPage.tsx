@@ -1,24 +1,35 @@
 import { useEffect, useState } from "react"
-import { useNavigate, useParams } from "react-router-dom"
-import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { useForm } from "react-hook-form"
+import { useNavigate, useParams } from "react-router-dom"
 import { z } from "zod"
-import { ArrowLeft, Loader2 } from "lucide-react"
+import {
+  ArrowLeft,
+  Check,
+  GraduationCap,
+  Loader2,
+} from "lucide-react"
 
+import { ErrorState } from "@/components/shared/ErrorState"
+import { LoadingState } from "@/components/shared/LoadingState"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   useDepartmentsQuery,
   useFacultyQuery,
   useOnboardFacultyMutation,
   useUpdateFacultyMutation,
 } from "@/features/faculty/faculty-queries"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { LoadingState } from "@/components/shared/LoadingState"
 
 const facultyFormSchema = z.object({
-  email: z.string(),
-  password: z.string(),
+  email: z
+    .string()
+    .trim()
+    .email("Enter a valid email address"),
+  password: z
+    .string()
+    .min(8, "Password must contain at least 8 characters"),
   employeeNumber: z
     .string()
     .trim()
@@ -30,6 +41,41 @@ const facultyFormSchema = z.object({
 
 type FacultyFormInput = z.input<typeof facultyFormSchema>
 type FacultyFormValues = z.output<typeof facultyFormSchema>
+
+function FormSection({
+  title,
+  description,
+  children,
+}: {
+  title: string
+  description: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="space-y-5">
+      <div>
+        <h2 className="font-semibold tracking-tight">{title}</h2>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {description}
+        </p>
+      </div>
+
+      <div className="grid gap-5">{children}</div>
+    </section>
+  )
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) {
+    return null
+  }
+
+  return (
+    <p className="text-sm text-destructive" role="alert">
+      {message}
+    </p>
+  )
+}
 
 export function AdminFacultyFormPage() {
   const navigate = useNavigate()
@@ -44,6 +90,7 @@ export function AdminFacultyFormPage() {
   const updateFacultyMutation = useUpdateFacultyMutation()
 
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitSuccess, setSubmitSuccess] = useState(false)
 
   const {
     register,
@@ -98,54 +145,36 @@ export function AdminFacultyFormPage() {
     departmentsQuery.isLoading ||
     (isEditMode && facultyQuery.isLoading)
   ) {
-    return <LoadingState />
+    return (
+      <main className="mx-auto w-full max-w-3xl p-6">
+        <LoadingState />
+      </main>
+    )
   }
 
   if (departmentsQuery.isError) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">
-          Unable to load departments
-        </h1>
-
-        <p className="text-sm text-muted-foreground">
-          The department list could not be loaded.
-        </p>
-
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
+      <main className="mx-auto w-full max-w-3xl p-6">
+        <ErrorState
+          message="Unable to load the department list."
+          onRetry={() => {
             void departmentsQuery.refetch()
           }}
-        >
-          Try Again
-        </Button>
-      </div>
+        />
+      </main>
     )
   }
 
   if (isEditMode && facultyQuery.isError) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">
-          Unable to load faculty
-        </h1>
-
-        <p className="text-sm text-muted-foreground">
-          The faculty profile could not be loaded.
-        </p>
-
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
+      <main className="mx-auto w-full max-w-3xl p-6">
+        <ErrorState
+          message="Unable to load the faculty profile."
+          onRetry={() => {
             void facultyQuery.refetch()
           }}
-        >
-          Try Again
-        </Button>
-      </div>
+        />
+      </main>
     )
   }
 
@@ -157,28 +186,40 @@ export function AdminFacultyFormPage() {
 
   if (isEditMode && !faculty) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">
-          Faculty not found
-        </h1>
+      <main className="mx-auto w-full max-w-3xl p-6">
+        <div className="rounded-2xl border border-dashed bg-card p-10 text-center">
+          <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            <GraduationCap
+              className="size-6"
+              aria-hidden="true"
+            />
+          </div>
 
-        <p className="text-sm text-muted-foreground">
-          The requested faculty profile does not exist.
-        </p>
+          <h1 className="mt-5 text-lg font-semibold tracking-tight">
+            Faculty member not found
+          </h1>
 
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => navigate("/admin/faculty")}
-        >
-          Back to Faculty
-        </Button>
-      </div>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+            The faculty profile you are trying to edit could not be
+            found.
+          </p>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-6"
+            onClick={() => navigate("/admin/faculty")}
+          >
+            Back to faculty
+          </Button>
+        </div>
+      </main>
     )
   }
 
   async function onSubmit(data: FacultyFormValues) {
     setSubmitError(null)
+    setSubmitSuccess(false)
 
     try {
       if (isEditMode && facultyId) {
@@ -202,7 +243,11 @@ export function AdminFacultyFormPage() {
         })
       }
 
-      navigate("/admin/faculty")
+      setSubmitSuccess(true)
+
+      window.setTimeout(() => {
+        navigate("/admin/faculty")
+      }, 500)
     } catch (error) {
       if (error instanceof Error) {
         setSubmitError(error.message)
@@ -221,175 +266,239 @@ export function AdminFacultyFormPage() {
     updateFacultyMutation.isPending
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-6">
+      <section className="space-y-5">
         <Button
           type="button"
           variant="ghost"
-          size="icon"
+          className="w-fit gap-2 px-2"
           onClick={() => navigate("/admin/faculty")}
-          aria-label="Back to faculty"
+          disabled={isSubmitting}
         >
-          <ArrowLeft />
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Faculty
         </Button>
 
-        <div>
-          <h1 className="text-2xl font-semibold">
-            {isEditMode ? "Edit Faculty" : "Add Faculty"}
-          </h1>
+        <div className="space-y-3">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <GraduationCap
+              className="size-5"
+              aria-hidden="true"
+            />
+          </div>
 
-          <p className="text-sm text-muted-foreground">
-            {isEditMode
-              ? "Update the faculty profile."
-              : "Create a faculty account and profile."}
-          </p>
+          <div>
+            <p className="text-sm font-medium text-primary">
+              Administration
+            </p>
+
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
+              {isEditMode
+                ? "Edit faculty"
+                : "Add faculty"}
+            </h1>
+
+            <p className="mt-2 max-w-2xl text-muted-foreground">
+              {isEditMode
+                ? "Update the faculty profile and department assignment."
+                : "Create a faculty account and profile for the appointment system."}
+            </p>
+          </div>
         </div>
-      </div>
+      </section>
 
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="max-w-2xl space-y-6 rounded-lg border p-6"
+        noValidate
+        className="overflow-hidden rounded-2xl border bg-card"
       >
-        {!isEditMode && (
-          <>
-            <div className="grid gap-2">
-              <Label htmlFor="email">Email</Label>
+        <div className="space-y-8 p-5 sm:p-7">
+          {!isEditMode ? (
+            <FormSection
+              title="Account"
+              description="Set the credentials used by the faculty member to sign in."
+            >
+              <div className="grid gap-2">
+                <Label htmlFor="email">Email address</Label>
 
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                {...register("email")}
-              />
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="faculty@example.com"
+                  aria-invalid={Boolean(errors.email)}
+                  {...register("email")}
+                />
 
-              {errors.email && (
-                <p className="text-sm text-destructive">
-                  {errors.email.message}
+                <FieldError message={errors.email?.message} />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="password">
+                  Initial password
+                </Label>
+
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Enter an initial password"
+                  aria-invalid={Boolean(errors.password)}
+                  {...register("password")}
+                />
+
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Use at least 8 characters. The faculty member can
+                  use this password when signing in.
                 </p>
-              )}
+
+                <FieldError message={errors.password?.message} />
+              </div>
+            </FormSection>
+          ) : (
+            <section className="rounded-xl border bg-muted/20 p-4">
+              <p className="text-sm font-medium">
+                Account information
+              </p>
+
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Account credentials are not editable from this
+                profile form.
+              </p>
+            </section>
+          )}
+
+          <div className="border-t" />
+
+          <FormSection
+            title="Basic information"
+            description="Maintain the faculty member's identity and academic assignment."
+          >
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="firstName">First name</Label>
+
+                <Input
+                  id="firstName"
+                  autoComplete="given-name"
+                  placeholder="First name"
+                  aria-invalid={Boolean(errors.firstName)}
+                  {...register("firstName")}
+                />
+
+                <FieldError message={errors.firstName?.message} />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="lastName">Last name</Label>
+
+                <Input
+                  id="lastName"
+                  autoComplete="family-name"
+                  placeholder="Last name"
+                  aria-invalid={Boolean(errors.lastName)}
+                  {...register("lastName")}
+                />
+
+                <FieldError message={errors.lastName?.message} />
+              </div>
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="password">
-                Initial Password
+              <Label htmlFor="employeeNumber">
+                Employee number
               </Label>
 
               <Input
-                id="password"
-                type="password"
-                autoComplete="new-password"
-                {...register("password")}
+                id="employeeNumber"
+                placeholder="Employee number"
+                aria-invalid={Boolean(errors.employeeNumber)}
+                {...register("employeeNumber")}
               />
 
-              <p className="text-xs text-muted-foreground">
-                The password must contain at least 8 characters.
-              </p>
-
-              {errors.password && (
-                <p className="text-sm text-destructive">
-                  {errors.password.message}
-                </p>
-              )}
+              <FieldError
+                message={errors.employeeNumber?.message}
+              />
             </div>
-          </>
-        )}
 
-        <div className="grid gap-2">
-          <Label htmlFor="employeeNumber">
-            Employee Number
-          </Label>
+            <div className="grid gap-2">
+              <Label htmlFor="departmentId">Department</Label>
 
-          <Input
-            id="employeeNumber"
-            {...register("employeeNumber")}
-          />
-
-          {errors.employeeNumber && (
-            <p className="text-sm text-destructive">
-              {errors.employeeNumber.message}
-            </p>
-          )}
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="grid gap-2">
-            <Label htmlFor="firstName">First Name</Label>
-
-            <Input
-              id="firstName"
-              autoComplete="given-name"
-              {...register("firstName")}
-            />
-
-            {errors.firstName && (
-              <p className="text-sm text-destructive">
-                {errors.firstName.message}
-              </p>
-            )}
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="lastName">Last Name</Label>
-
-            <Input
-              id="lastName"
-              autoComplete="family-name"
-              {...register("lastName")}
-            />
-
-            {errors.lastName && (
-              <p className="text-sm text-destructive">
-                {errors.lastName.message}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="grid gap-2">
-          <Label htmlFor="departmentId">Department</Label>
-
-          <select
-            id="departmentId"
-            value={selectedDepartmentId}
-            onChange={(event) => {
-              setValue("departmentId", event.target.value, {
-                shouldValidate: true,
-                shouldDirty: true,
-              })
-            }}
-            className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-          >
-            <option value="">
-              Select a department
-            </option>
-
-            {departments.map((department) => (
-              <option
-                key={department.id}
-                value={department.id}
+              <select
+                id="departmentId"
+                value={selectedDepartmentId}
+                onChange={(event) => {
+                  setValue(
+                    "departmentId",
+                    event.target.value,
+                    {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    },
+                  )
+                }}
+                aria-invalid={Boolean(errors.departmentId)}
+                className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition-[border-color,box-shadow,background-color] duration-150 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:bg-input/30"
               >
-                {department.name} ({department.code})
-              </option>
-            ))}
-          </select>
+                <option value="">
+                  Select a department
+                </option>
 
-          {errors.departmentId && (
-            <p className="text-sm text-destructive">
-              {errors.departmentId.message}
-            </p>
-          )}
+                {departments.map((department) => (
+                  <option
+                    key={department.id}
+                    value={department.id}
+                  >
+                    {department.name} ({department.code})
+                  </option>
+                ))}
+              </select>
+
+              <FieldError
+                message={errors.departmentId?.message}
+              />
+            </div>
+          </FormSection>
         </div>
 
-        {submitError && (
-          <div
-            role="alert"
-            className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
-          >
-            {submitError}
+        {(submitError || submitSuccess) && (
+          <div className="border-t px-5 py-4 sm:px-7">
+            {submitError ? (
+              <div
+                role="alert"
+                className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
+              >
+                <p className="font-medium">
+                  Unable to save faculty
+                </p>
+
+                <p className="mt-1 leading-5">
+                  {submitError}
+                </p>
+              </div>
+            ) : null}
+
+            {submitSuccess ? (
+              <div
+                role="status"
+                className="flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/5 p-4 text-sm text-green-700 dark:text-green-400"
+              >
+                <Check
+                  className="size-4 shrink-0"
+                  aria-hidden="true"
+                />
+
+                <span>
+                  {isEditMode
+                    ? "Faculty profile updated successfully."
+                    : "Faculty account created successfully."}
+                </span>
+              </div>
+            ) : null}
           </div>
         )}
 
-        <div className="flex justify-end gap-3">
+        <div className="flex flex-col-reverse gap-2 border-t bg-muted/10 p-5 sm:flex-row sm:justify-end sm:p-6">
           <Button
             type="button"
             variant="outline"
@@ -401,22 +510,34 @@ export function AdminFacultyFormPage() {
 
           <Button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || submitSuccess}
           >
-            {isSubmitting && (
-              <Loader2 className="mr-2 size-4 animate-spin" />
+            {isSubmitting ? (
+              <>
+                <Loader2
+                  className="size-4 animate-spin"
+                  aria-hidden="true"
+                />
+                {isEditMode
+                  ? "Saving..."
+                  : "Creating..."}
+              </>
+            ) : submitSuccess ? (
+              <>
+                <Check
+                  className="size-4"
+                  aria-hidden="true"
+                />
+                Saved
+              </>
+            ) : isEditMode ? (
+              "Save changes"
+            ) : (
+              "Create faculty"
             )}
-
-            {isSubmitting
-              ? isEditMode
-                ? "Saving..."
-                : "Creating..."
-              : isEditMode
-                ? "Save Changes"
-                : "Create Faculty"}
           </Button>
         </div>
       </form>
-    </div>
+    </main>
   )
 }

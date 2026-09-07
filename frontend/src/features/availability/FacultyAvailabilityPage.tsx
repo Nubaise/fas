@@ -1,5 +1,13 @@
-import { useMemo, useState } from "react"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import {
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -51,6 +59,17 @@ type ExceptionFormValues = {
   reason: string
 }
 
+type DeleteTarget =
+  | {
+      type: "schedule"
+      item: AvailabilitySchedule
+    }
+  | {
+      type: "exception"
+      item: AvailabilityException
+    }
+  | null
+
 const defaultScheduleFormValues: ScheduleFormValues = {
   dayOfWeek: 1,
   startTime: "09:00",
@@ -71,14 +90,138 @@ function formatTime(time: string) {
   return time.slice(0, 5)
 }
 
+function formatDisplayTime(time: string) {
+  const [hours, minutes] = formatTime(time).split(":")
+  const hour = Number(hours)
+
+  return new Date(
+    1970,
+    0,
+    1,
+    hour,
+    Number(minutes),
+  ).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  })
+}
+
 function formatExceptionDate(date: string) {
-  return new Date(`${date}T00:00:00`).toLocaleDateString()
+  return new Date(`${date}T00:00:00`).toLocaleDateString([], {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  })
+}
+
+function formatShortDate(date: string) {
+  return new Date(`${date}T00:00:00`).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+}
+
+function sortSchedules(
+  schedules: AvailabilitySchedule[],
+) {
+  return [...schedules].sort((a, b) => {
+    if (a.dayOfWeek !== b.dayOfWeek) {
+      return a.dayOfWeek - b.dayOfWeek
+    }
+
+    return a.startTime.localeCompare(b.startTime)
+  })
+}
+
+function sortExceptions(
+  exceptions: AvailabilityException[],
+) {
+  return [...exceptions].sort((a, b) =>
+    a.date.localeCompare(b.date),
+  )
+}
+
+function Modal({
+  title,
+  description,
+  children,
+  onClose,
+  busy,
+}: {
+  title: string
+  description: string
+  children: React.ReactNode
+  onClose: () => void
+  busy: boolean
+}) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !busy) {
+        onClose()
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [busy, onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-6"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) {
+          onClose()
+        }
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="availability-modal-title"
+        className="max-h-[calc(100dvh-1rem)] w-full overflow-y-auto rounded-t-2xl border bg-card shadow-2xl sm:max-w-xl sm:rounded-2xl"
+      >
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-card px-6 py-5 sm:px-7">
+          <div>
+            <h2
+              id="availability-modal-title"
+              className="text-lg font-semibold tracking-tight"
+            >
+              {title}
+            </h2>
+
+            <p className="mt-1 text-sm text-muted-foreground">
+              {description}
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Close"
+            onClick={onClose}
+            disabled={busy}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+
+        {children}
+      </div>
+    </div>
+  )
 }
 
 export function FacultyAvailabilityPage() {
   const { user } = useAuth()
 
-  const [isScheduleFormOpen, setIsScheduleFormOpen] =
+  const [scheduleFormOpen, setScheduleFormOpen] =
     useState(false)
 
   const [editingSchedule, setEditingSchedule] =
@@ -90,7 +233,7 @@ export function FacultyAvailabilityPage() {
   const [scheduleFormError, setScheduleFormError] =
     useState<string | null>(null)
 
-  const [isExceptionFormOpen, setIsExceptionFormOpen] =
+  const [exceptionFormOpen, setExceptionFormOpen] =
     useState(false)
 
   const [editingException, setEditingException] =
@@ -100,6 +243,15 @@ export function FacultyAvailabilityPage() {
     useState<ExceptionFormValues>(defaultExceptionFormValues)
 
   const [exceptionFormError, setExceptionFormError] =
+    useState<string | null>(null)
+
+  const [deleteTarget, setDeleteTarget] =
+    useState<DeleteTarget>(null)
+
+  const [actionError, setActionError] =
+    useState<string | null>(null)
+
+  const [actionSuccess, setActionSuccess] =
     useState<string | null>(null)
 
   const facultyQuery = useFacultyQuery()
@@ -143,19 +295,43 @@ export function FacultyAvailabilityPage() {
     createExceptionMutation.isPending ||
     updateExceptionMutation.isPending
 
-  const schedules = schedulesQuery.data ?? []
-  const exceptions = exceptionsQuery.data ?? []
+  const isDeleting =
+    deleteScheduleMutation.isPending ||
+    deleteExceptionMutation.isPending
+
+  const schedules = useMemo(
+    () => sortSchedules(schedulesQuery.data ?? []),
+    [schedulesQuery.data],
+  )
+
+  const exceptions = useMemo(
+    () => sortExceptions(exceptionsQuery.data ?? []),
+    [exceptionsQuery.data],
+  )
+
+  const activeSchedules = schedules.filter(
+    (schedule) => schedule.isActive,
+  ).length
+
+  function clearFeedback() {
+    setActionError(null)
+    setActionSuccess(null)
+  }
 
   function openCreateScheduleForm() {
+    clearFeedback()
     setEditingSchedule(null)
-    setScheduleFormValues(defaultScheduleFormValues)
+    setScheduleFormValues({
+      ...defaultScheduleFormValues,
+    })
     setScheduleFormError(null)
-    setIsScheduleFormOpen(true)
+    setScheduleFormOpen(true)
   }
 
   function openEditScheduleForm(
     schedule: AvailabilitySchedule,
   ) {
+    clearFeedback()
     setEditingSchedule(schedule)
 
     setScheduleFormValues({
@@ -171,7 +347,7 @@ export function FacultyAvailabilityPage() {
     })
 
     setScheduleFormError(null)
-    setIsScheduleFormOpen(true)
+    setScheduleFormOpen(true)
   }
 
   function closeScheduleForm() {
@@ -179,12 +355,13 @@ export function FacultyAvailabilityPage() {
       return
     }
 
-    setIsScheduleFormOpen(false)
+    setScheduleFormOpen(false)
     setEditingSchedule(null)
     setScheduleFormError(null)
   }
 
   function openCreateExceptionForm() {
+    clearFeedback()
     setEditingException(null)
 
     setExceptionFormValues({
@@ -193,12 +370,13 @@ export function FacultyAvailabilityPage() {
     })
 
     setExceptionFormError(null)
-    setIsExceptionFormOpen(true)
+    setExceptionFormOpen(true)
   }
 
   function openEditExceptionForm(
     exception: AvailabilityException,
   ) {
+    clearFeedback()
     setEditingException(exception)
 
     setExceptionFormValues({
@@ -216,7 +394,7 @@ export function FacultyAvailabilityPage() {
     })
 
     setExceptionFormError(null)
-    setIsExceptionFormOpen(true)
+    setExceptionFormOpen(true)
   }
 
   function closeExceptionForm() {
@@ -224,7 +402,7 @@ export function FacultyAvailabilityPage() {
       return
     }
 
-    setIsExceptionFormOpen(false)
+    setExceptionFormOpen(false)
     setEditingException(null)
     setExceptionFormError(null)
   }
@@ -234,6 +412,7 @@ export function FacultyAvailabilityPage() {
   ) {
     event.preventDefault()
     setScheduleFormError(null)
+    clearFeedback()
 
     if (!faculty) {
       return
@@ -271,6 +450,8 @@ export function FacultyAvailabilityPage() {
             isActive: scheduleFormValues.isActive,
           },
         })
+
+        setActionSuccess("Availability schedule updated.")
       } else {
         await createScheduleMutation.mutateAsync({
           facultyId: faculty.id,
@@ -280,6 +461,8 @@ export function FacultyAvailabilityPage() {
           slotDuration: scheduleFormValues.slotDuration,
           isActive: scheduleFormValues.isActive,
         })
+
+        setActionSuccess("Availability schedule added.")
       }
 
       closeScheduleForm()
@@ -295,6 +478,7 @@ export function FacultyAvailabilityPage() {
   ) {
     event.preventDefault()
     setExceptionFormError(null)
+    clearFeedback()
 
     if (!faculty) {
       return
@@ -347,11 +531,15 @@ export function FacultyAvailabilityPage() {
           id: editingException.id,
           data,
         })
+
+        setActionSuccess("Availability exception updated.")
       } else {
         await createExceptionMutation.mutateAsync({
           facultyId: faculty.id,
           ...data,
         })
+
+        setActionSuccess("Availability exception added.")
       }
 
       closeExceptionForm()
@@ -362,83 +550,72 @@ export function FacultyAvailabilityPage() {
     }
   }
 
-  async function handleDeleteSchedule(
-    schedule: AvailabilitySchedule,
-  ) {
-    const confirmed = window.confirm(
-      `Delete the ${DAYS[schedule.dayOfWeek]} schedule from ${formatTime(
-        schedule.startTime,
-      )} to ${formatTime(schedule.endTime)}?`,
-    )
-
-    if (!confirmed || !faculty) {
+  async function handleDelete() {
+    if (!deleteTarget || !faculty) {
       return
     }
 
+    clearFeedback()
+
     try {
-      await deleteScheduleMutation.mutateAsync({
-        id: schedule.id,
-        facultyId: faculty.id,
-      })
+      if (deleteTarget.type === "schedule") {
+        await deleteScheduleMutation.mutateAsync({
+          id: deleteTarget.item.id,
+          facultyId: faculty.id,
+        })
+
+        setActionSuccess("Availability schedule deleted.")
+      } else {
+        await deleteExceptionMutation.mutateAsync({
+          id: deleteTarget.item.id,
+          facultyId: faculty.id,
+        })
+
+        setActionSuccess("Availability exception deleted.")
+      }
+
+      setDeleteTarget(null)
     } catch {
-      window.alert(
-        "Unable to delete this schedule. Please try again.",
+      setActionError(
+        deleteTarget.type === "schedule"
+          ? "Unable to delete this schedule. Please try again."
+          : "Unable to delete this exception. Please try again.",
       )
     }
   }
 
-  async function handleDeleteException(
-    exception: AvailabilityException,
-  ) {
-    const description = exception.startTime
-      ? `${formatExceptionDate(exception.date)} from ${formatTime(
-          exception.startTime,
-        )} to ${formatTime(exception.endTime ?? "")}`
-      : `${formatExceptionDate(exception.date)} for the full day`
-
-    const confirmed = window.confirm(
-      `Delete the availability exception for ${description}?`,
+  if (facultyQuery.isPending) {
+    return (
+      <main className="mx-auto w-full max-w-6xl p-6">
+        <LoadingState />
+      </main>
     )
-
-    if (!confirmed || !faculty) {
-      return
-    }
-
-    try {
-      await deleteExceptionMutation.mutateAsync({
-        id: exception.id,
-        facultyId: faculty.id,
-      })
-    } catch {
-      window.alert(
-        "Unable to delete this exception. Please try again.",
-      )
-    }
-  }
-
-  if (facultyQuery.isLoading) {
-    return <LoadingState />
   }
 
   if (facultyQuery.isError) {
     return (
-      <ErrorState message="Unable to load your faculty profile." />
+      <main className="mx-auto w-full max-w-6xl p-6">
+        <ErrorState
+          message="Unable to load your faculty profile."
+          onRetry={() => facultyQuery.refetch()}
+        />
+      </main>
     )
   }
 
   if (!faculty) {
     return (
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 p-6">
-        <section className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">
-            Faculty Portal
+        <section className="rounded-2xl border border-dashed p-8">
+          <p className="text-sm font-medium text-primary">
+            Faculty portal
           </p>
 
-          <h1 className="text-3xl font-semibold tracking-tight">
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight">
             Availability
           </h1>
 
-          <p className="text-muted-foreground">
+          <p className="mt-2 text-sm text-muted-foreground">
             No faculty profile is associated with your account.
           </p>
         </section>
@@ -447,219 +624,599 @@ export function FacultyAvailabilityPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-10 p-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">
-            Faculty Portal
-          </p>
+    <>
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-10 p-6">
+        <section className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-primary">
+              Faculty portal
+            </p>
 
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Availability
-          </h1>
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              Availability
+            </h1>
 
-          <p className="max-w-2xl text-muted-foreground">
-            Configure your weekly availability and manage dates
-            when you are unavailable.
-          </p>
-        </div>
-      </section>
-
-      <section className="space-y-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-1">
-            <h2 className="text-xl font-semibold">
-              Weekly schedules
-            </h2>
-
-            <p className="text-sm text-muted-foreground">
-              Active schedules generate appointment slots for
-              students.
+            <p className="max-w-2xl text-muted-foreground">
+              Set your recurring schedule and block specific dates
+              or times when you are unavailable.
             </p>
           </div>
+        </section>
 
-          <Button onClick={openCreateScheduleForm}>
-            <Plus className="mr-2 size-4" />
-            Add schedule
-          </Button>
-        </div>
+        {actionError ? (
+          <div
+            role="alert"
+            className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
+          >
+            <X
+              className="mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
 
-        {schedulesQuery.isLoading && <LoadingState />}
+            <span>{actionError}</span>
 
-        {schedulesQuery.isError && (
-          <ErrorState message="Unable to load your availability schedules." />
-        )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="ml-auto text-destructive hover:text-destructive"
+              onClick={() => setActionError(null)}
+              aria-label="Dismiss error"
+            >
+              <X className="size-3" aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null}
 
-        {!schedulesQuery.isLoading &&
-          !schedulesQuery.isError &&
-          schedules.length === 0 && (
-            <section className="rounded-xl border border-dashed p-8 text-center">
-              <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
-                <Plus className="size-5" />
+        {actionSuccess ? (
+          <div
+            role="status"
+            className="flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-700 dark:text-green-400"
+          >
+            <CheckCircle2
+              className="size-4 shrink-0"
+              aria-hidden="true"
+            />
+
+            <span>{actionSuccess}</span>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="ml-auto text-green-700 hover:text-green-700 dark:text-green-400 dark:hover:text-green-400"
+              onClick={() => setActionSuccess(null)}
+              aria-label="Dismiss success message"
+            >
+              <X className="size-3" aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null}
+
+        <section className="space-y-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <CalendarDays
+                  className="size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
+
+                <h2 className="text-xl font-semibold tracking-tight">
+                  Weekly schedule
+                </h2>
               </div>
 
-              <h3 className="mt-4 text-lg font-semibold">
-                No availability schedules
+              <p className="mt-1 text-sm text-muted-foreground">
+                {activeSchedules} active{" "}
+                {activeSchedules === 1
+                  ? "schedule"
+                  : "schedules"}{" "}
+                currently generating student slots.
+              </p>
+            </div>
+
+            <Button onClick={openCreateScheduleForm}>
+              <Plus className="size-4" />
+              Add schedule
+            </Button>
+          </div>
+
+          {schedulesQuery.isPending ? (
+            <LoadingState />
+          ) : schedulesQuery.isError ? (
+            <ErrorState
+              message="Unable to load your availability schedules."
+              onRetry={() => schedulesQuery.refetch()}
+            />
+          ) : schedules.length === 0 ? (
+            <section className="rounded-2xl border border-dashed p-10 text-center">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+                <CalendarDays
+                  className="size-5 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              </div>
+
+              <h3 className="mt-4 font-semibold">
+                No weekly schedule yet
               </h3>
 
               <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                Add a weekly schedule so students can see your
-                available appointment slots.
+                Add your first recurring schedule so students can
+                see appointment slots.
               </p>
 
               <Button
-                className="mt-5"
+                className="mt-6"
                 onClick={openCreateScheduleForm}
               >
                 Add your first schedule
               </Button>
             </section>
-          )}
+          ) : (
+            <div className="overflow-hidden rounded-2xl border bg-card">
+              <div className="divide-y">
+                {schedules.map((schedule) => (
+                  <article
+                    key={schedule.id}
+                    className="group p-5 transition-colors hover:bg-muted/30 sm:p-6"
+                  >
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="flex min-w-0 items-start gap-4">
+                        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                          <CalendarDays
+                            className="size-5"
+                            aria-hidden="true"
+                          />
+                        </div>
 
-        {!schedulesQuery.isLoading &&
-          !schedulesQuery.isError &&
-          schedules.length > 0 && (
-            <div className="space-y-3">
-              {schedules.map((schedule) => (
-                <article
-                  key={schedule.id}
-                  className="rounded-xl border p-5"
-                >
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-semibold">
-                          {DAYS[schedule.dayOfWeek]}
-                        </h3>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold">
+                              {DAYS[schedule.dayOfWeek]}
+                            </h3>
 
-                        <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
-                          {schedule.isActive
-                            ? "Active"
-                            : "Inactive"}
-                        </span>
+                            <span
+                              className={
+                                schedule.isActive
+                                  ? "rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-1 text-xs font-semibold text-green-700 dark:text-green-400"
+                                  : "rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground"
+                              }
+                            >
+                              {schedule.isActive
+                                ? "Active"
+                                : "Inactive"}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                            <span>
+                              {formatDisplayTime(
+                                schedule.startTime,
+                              )}{" "}
+                              –{" "}
+                              {formatDisplayTime(
+                                schedule.endTime,
+                              )}
+                            </span>
+
+                            <span>
+                              {schedule.slotDuration}-minute
+                              slots
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
-                      <p className="text-sm text-muted-foreground">
-                        {formatTime(schedule.startTime)} –{" "}
-                        {formatTime(schedule.endTime)}
-                      </p>
+                      <div className="flex gap-2 lg:shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            openEditScheduleForm(schedule)
+                          }
+                        >
+                          <Pencil className="size-4" />
+                          Edit
+                        </Button>
 
-                      <p className="text-sm text-muted-foreground">
-                        {schedule.slotDuration}-minute
-                        appointments
-                      </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setDeleteTarget({
+                              type: "schedule",
+                              item: schedule,
+                            })
+                          }
+                          disabled={isDeleting}
+                        >
+                          <Trash2 className="size-4" />
+                          Delete
+                        </Button>
+                      </div>
                     </div>
-
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          openEditScheduleForm(schedule)
-                        }
-                      >
-                        <Pencil className="mr-2 size-4" />
-                        Edit
-                      </Button>
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          handleDeleteSchedule(schedule)
-                        }
-                        disabled={
-                          deleteScheduleMutation.isPending
-                        }
-                      >
-                        <Trash2 className="mr-2 size-4" />
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                ))}
+              </div>
             </div>
           )}
+        </section>
 
-        {isScheduleFormOpen && (
-          <section className="rounded-xl border p-6">
-            <div className="mb-6 space-y-1">
-              <h3 className="text-lg font-semibold">
-                {editingSchedule
-                  ? "Edit availability"
-                  : "Add availability"}
-              </h3>
+        <section className="space-y-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Clock3
+                  className="size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
 
-              <p className="text-sm text-muted-foreground">
-                Set when students can request appointments.
+                <h2 className="text-xl font-semibold tracking-tight">
+                  Availability exceptions
+                </h2>
+              </div>
+
+              <p className="mt-1 text-sm text-muted-foreground">
+                Block a full day or a specific period from your
+                normal schedule.
               </p>
             </div>
 
-            <form
-              onSubmit={handleScheduleSubmit}
-              className="space-y-6"
+            <Button
+              variant="outline"
+              onClick={openCreateExceptionForm}
             >
-              <div className="grid gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="dayOfWeek">Day</Label>
+              <Plus className="size-4" />
+              Add exception
+            </Button>
+          </div>
 
-                  <select
-                    id="dayOfWeek"
-                    value={scheduleFormValues.dayOfWeek}
-                    onChange={(event) =>
-                      setScheduleFormValues((current) => ({
-                        ...current,
-                        dayOfWeek: Number(event.target.value),
-                      }))
-                    }
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          {exceptionsQuery.isPending ? (
+            <LoadingState />
+          ) : exceptionsQuery.isError ? (
+            <ErrorState
+              message="Unable to load your availability exceptions."
+              onRetry={() => exceptionsQuery.refetch()}
+            />
+          ) : exceptions.length === 0 ? (
+            <section className="rounded-2xl border border-dashed p-10 text-center">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+                <Clock3
+                  className="size-5 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              </div>
+
+              <h3 className="mt-4 font-semibold">
+                No exceptions
+              </h3>
+
+              <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                Your normal weekly availability has no blocked
+                dates or times.
+              </p>
+
+              <Button
+                className="mt-6"
+                variant="outline"
+                onClick={openCreateExceptionForm}
+              >
+                Add an exception
+              </Button>
+            </section>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border bg-card">
+              <div className="divide-y">
+                {exceptions.map((exception) => (
+                  <article
+                    key={exception.id}
+                    className="p-5 transition-colors hover:bg-muted/30 sm:p-6"
                   >
-                    {DAYS.map((day, index) => (
-                      <option key={day} value={index}>
-                        {day}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="flex min-w-0 items-start gap-4">
+                        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted">
+                          <Clock3
+                            className="size-5 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                        </div>
 
+                        <div className="min-w-0">
+                          <h3 className="font-semibold">
+                            {formatShortDate(exception.date)}
+                          </h3>
+
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {exception.startTime
+                              ? `${formatDisplayTime(
+                                  exception.startTime,
+                                )} – ${formatDisplayTime(
+                                  exception.endTime ?? "",
+                                )}`
+                              : "Full day"}
+                          </p>
+
+                          {exception.reason ? (
+                            <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                              {exception.reason}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 lg:shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            openEditExceptionForm(exception)
+                          }
+                        >
+                          <Pencil className="size-4" />
+                          Edit
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setDeleteTarget({
+                              type: "exception",
+                              item: exception,
+                            })
+                          }
+                          disabled={isDeleting}
+                        >
+                          <Trash2 className="size-4" />
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      </main>
+
+      {scheduleFormOpen ? (
+        <Modal
+          title={
+            editingSchedule
+              ? "Edit availability"
+              : "Add availability"
+          }
+          description="Set when students can request appointments."
+          onClose={closeScheduleForm}
+          busy={isScheduleSaving}
+        >
+          <form
+            onSubmit={handleScheduleSubmit}
+            className="space-y-6 p-6 sm:p-7"
+          >
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="schedule-day">
+                  Day
+                </Label>
+
+                <select
+                  id="schedule-day"
+                  value={scheduleFormValues.dayOfWeek}
+                  onChange={(event) =>
+                    setScheduleFormValues((current) => ({
+                      ...current,
+                      dayOfWeek: Number(event.target.value),
+                    }))
+                  }
+                  className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-[border-color,box-shadow] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  {DAYS.map((day, index) => (
+                    <option key={day} value={index}>
+                      {day}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="schedule-duration">
+                  Slot duration
+                </Label>
+
+                <select
+                  id="schedule-duration"
+                  value={scheduleFormValues.slotDuration}
+                  onChange={(event) =>
+                    setScheduleFormValues((current) => ({
+                      ...current,
+                      slotDuration: Number(
+                        event.target.value,
+                      ) as 15 | 30 | 45 | 60,
+                    }))
+                  }
+                  className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-[border-color,box-shadow] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  {SLOT_DURATIONS.map((duration) => (
+                    <option key={duration} value={duration}>
+                      {duration} minutes
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="schedule-start">
+                  Start time
+                </Label>
+
+                <Input
+                  id="schedule-start"
+                  type="time"
+                  value={scheduleFormValues.startTime}
+                  onChange={(event) =>
+                    setScheduleFormValues((current) => ({
+                      ...current,
+                      startTime: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="schedule-end">
+                  End time
+                </Label>
+
+                <Input
+                  id="schedule-end"
+                  type="time"
+                  value={scheduleFormValues.endTime}
+                  onChange={(event) =>
+                    setScheduleFormValues((current) => ({
+                      ...current,
+                      endTime: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </div>
+            </div>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/40">
+              <input
+                type="checkbox"
+                checked={scheduleFormValues.isActive}
+                onChange={(event) =>
+                  setScheduleFormValues((current) => ({
+                    ...current,
+                    isActive: event.target.checked,
+                  }))
+                }
+                className="mt-0.5 size-4 accent-[var(--primary)]"
+              />
+
+              <span className="space-y-1">
+                <span className="block text-sm font-medium">
+                  Schedule is active
+                </span>
+
+                <span className="block text-xs leading-5 text-muted-foreground">
+                  Active schedules generate appointment slots
+                  for students.
+                </span>
+              </span>
+            </label>
+
+            {scheduleFormError ? (
+              <div
+                role="alert"
+                className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
+              >
+                {scheduleFormError}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col-reverse gap-2 border-t pt-5 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeScheduleForm}
+                disabled={isScheduleSaving}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                type="submit"
+                disabled={isScheduleSaving}
+              >
+                {isScheduleSaving
+                  ? "Saving changes..."
+                  : editingSchedule
+                    ? "Save changes"
+                    : "Add schedule"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
+      {exceptionFormOpen ? (
+        <Modal
+          title={
+            editingException
+              ? "Edit exception"
+              : "Add exception"
+          }
+          description="Temporarily block availability from your normal schedule."
+          onClose={closeExceptionForm}
+          busy={isExceptionSaving}
+        >
+          <form
+            onSubmit={handleExceptionSubmit}
+            className="space-y-6 p-6 sm:p-7"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="exception-date">
+                Date
+              </Label>
+
+              <Input
+                id="exception-date"
+                type="date"
+                value={exceptionFormValues.date}
+                onChange={(event) =>
+                  setExceptionFormValues((current) => ({
+                    ...current,
+                    date: event.target.value,
+                  }))
+                }
+                required
+              />
+            </div>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/40">
+              <input
+                type="checkbox"
+                checked={exceptionFormValues.isFullDay}
+                onChange={(event) =>
+                  setExceptionFormValues((current) => ({
+                    ...current,
+                    isFullDay: event.target.checked,
+                  }))
+                }
+                className="mt-0.5 size-4 accent-[var(--primary)]"
+              />
+
+              <span className="space-y-1">
+                <span className="block text-sm font-medium">
+                  Full-day exception
+                </span>
+
+                <span className="block text-xs leading-5 text-muted-foreground">
+                  Block your entire availability for this date.
+                </span>
+              </span>
+            </label>
+
+            {!exceptionFormValues.isFullDay ? (
+              <div className="grid gap-5 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="slotDuration">
-                    Slot duration
-                  </Label>
-
-                  <select
-                    id="slotDuration"
-                    value={scheduleFormValues.slotDuration}
-                    onChange={(event) =>
-                      setScheduleFormValues((current) => ({
-                        ...current,
-                        slotDuration: Number(
-                          event.target.value,
-                        ) as 15 | 30 | 45 | 60,
-                      }))
-                    }
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    {SLOT_DURATIONS.map((duration) => (
-                      <option key={duration} value={duration}>
-                        {duration} minutes
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="startTime">
+                  <Label htmlFor="exception-start">
                     Start time
                   </Label>
 
                   <Input
-                    id="startTime"
+                    id="exception-start"
                     type="time"
-                    value={scheduleFormValues.startTime}
+                    value={exceptionFormValues.startTime}
                     onChange={(event) =>
-                      setScheduleFormValues((current) => ({
+                      setExceptionFormValues((current) => ({
                         ...current,
                         startTime: event.target.value,
                       }))
@@ -669,14 +1226,16 @@ export function FacultyAvailabilityPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="endTime">End time</Label>
+                  <Label htmlFor="exception-end">
+                    End time
+                  </Label>
 
                   <Input
-                    id="endTime"
+                    id="exception-end"
                     type="time"
-                    value={scheduleFormValues.endTime}
+                    value={exceptionFormValues.endTime}
                     onChange={(event) =>
-                      setScheduleFormValues((current) => ({
+                      setExceptionFormValues((current) => ({
                         ...current,
                         endTime: event.target.value,
                       }))
@@ -685,329 +1244,141 @@ export function FacultyAvailabilityPage() {
                   />
                 </div>
               </div>
+            ) : null}
 
-              <label className="flex items-center gap-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={scheduleFormValues.isActive}
-                  onChange={(event) =>
-                    setScheduleFormValues((current) => ({
-                      ...current,
-                      isActive: event.target.checked,
-                    }))
-                  }
-                  className="size-4"
-                />
+            <div className="space-y-2">
+              <Label htmlFor="exception-reason">
+                Reason
+              </Label>
 
-                <span>
-                  <span className="font-medium">
-                    Schedule is active
-                  </span>
+              <Input
+                id="exception-reason"
+                value={exceptionFormValues.reason}
+                onChange={(event) =>
+                  setExceptionFormValues((current) => ({
+                    ...current,
+                    reason: event.target.value,
+                  }))
+                }
+                placeholder="Optional"
+              />
+            </div>
 
-                  <span className="block text-muted-foreground">
-                    Active schedules generate appointment slots
-                    for students.
-                  </span>
-                </span>
-              </label>
-
-              {scheduleFormError && (
-                <p className="text-sm text-destructive">
-                  {scheduleFormError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={closeScheduleForm}
-                  disabled={isScheduleSaving}
-                >
-                  Cancel
-                </Button>
-
-                <Button
-                  type="submit"
-                  disabled={isScheduleSaving}
-                >
-                  {isScheduleSaving
-                    ? "Saving..."
-                    : editingSchedule
-                      ? "Save changes"
-                      : "Add schedule"}
-                </Button>
+            {exceptionFormError ? (
+              <div
+                role="alert"
+                className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
+              >
+                {exceptionFormError}
               </div>
-            </form>
-          </section>
-        )}
-      </section>
+            ) : null}
 
-      <section className="space-y-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-1">
-            <h2 className="text-xl font-semibold">
-              Availability exceptions
-            </h2>
-
-            <p className="text-sm text-muted-foreground">
-              Block a full day or a specific time range from your
-              normal availability.
-            </p>
-          </div>
-
-          <Button onClick={openCreateExceptionForm}>
-            <Plus className="mr-2 size-4" />
-            Add exception
-          </Button>
-        </div>
-
-        {exceptionsQuery.isLoading && <LoadingState />}
-
-        {exceptionsQuery.isError && (
-          <ErrorState message="Unable to load your availability exceptions." />
-        )}
-
-        {!exceptionsQuery.isLoading &&
-          !exceptionsQuery.isError &&
-          exceptions.length === 0 && (
-            <section className="rounded-xl border border-dashed p-8 text-center">
-              <h3 className="text-lg font-semibold">
-                No availability exceptions
-              </h3>
-
-              <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                Add an exception when you need to block a date or
-                time from your normal schedule.
-              </p>
+            <div className="flex flex-col-reverse gap-2 border-t pt-5 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeExceptionForm}
+                disabled={isExceptionSaving}
+              >
+                Cancel
+              </Button>
 
               <Button
-                className="mt-5"
-                variant="outline"
-                onClick={openCreateExceptionForm}
+                type="submit"
+                disabled={isExceptionSaving}
               >
-                Add exception
+                {isExceptionSaving
+                  ? "Saving changes..."
+                  : editingException
+                    ? "Save changes"
+                    : "Add exception"}
               </Button>
-            </section>
-          )}
-
-        {!exceptionsQuery.isLoading &&
-          !exceptionsQuery.isError &&
-          exceptions.length > 0 && (
-            <div className="space-y-3">
-              {exceptions.map((exception) => (
-                <article
-                  key={exception.id}
-                  className="rounded-xl border p-5"
-                >
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="space-y-2">
-                      <h3 className="font-semibold">
-                        {formatExceptionDate(exception.date)}
-                      </h3>
-
-                      <p className="text-sm text-muted-foreground">
-                        {exception.startTime
-                          ? `${formatTime(
-                              exception.startTime,
-                            )} – ${formatTime(
-                              exception.endTime ?? "",
-                            )}`
-                          : "Full day"}
-                      </p>
-
-                      {exception.reason && (
-                        <p className="text-sm text-muted-foreground">
-                          {exception.reason}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          openEditExceptionForm(exception)
-                        }
-                      >
-                        <Pencil className="mr-2 size-4" />
-                        Edit
-                      </Button>
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          handleDeleteException(exception)
-                        }
-                        disabled={
-                          deleteExceptionMutation.isPending
-                        }
-                      >
-                        <Trash2 className="mr-2 size-4" />
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                </article>
-              ))}
             </div>
-          )}
+          </form>
+        </Modal>
+      ) : null}
 
-        {isExceptionFormOpen && (
-          <section className="rounded-xl border p-6">
-            <div className="mb-6 space-y-1">
-              <h3 className="text-lg font-semibold">
-                {editingException
-                  ? "Edit exception"
-                  : "Add exception"}
-              </h3>
-
-              <p className="text-sm text-muted-foreground">
-                Temporarily block availability from your normal
-                schedule.
+      {deleteTarget ? (
+        <Modal
+          title={
+            deleteTarget.type === "schedule"
+              ? "Delete availability schedule?"
+              : "Delete availability exception?"
+          }
+          description="This action cannot be undone."
+          onClose={() => {
+            if (!isDeleting) {
+              setDeleteTarget(null)
+            }
+          }}
+          busy={isDeleting}
+        >
+          <div className="space-y-6 p-6 sm:p-7">
+            <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+              <p className="text-sm leading-6">
+                {deleteTarget.type === "schedule" ? (
+                  <>
+                    Delete the{" "}
+                    <strong>
+                      {DAYS[
+                        deleteTarget.item.dayOfWeek
+                      ]
+                      }
+                    </strong>{" "}
+                    schedule from{" "}
+                    <strong>
+                      {formatDisplayTime(
+                        deleteTarget.item.startTime,
+                      )}
+                    </strong>{" "}
+                    to{" "}
+                    <strong>
+                      {formatDisplayTime(
+                        deleteTarget.item.endTime,
+                      )}
+                    </strong>
+                    ?
+                  </>
+                ) : (
+                  <>
+                    Delete the availability exception for{" "}
+                    <strong>
+                      {formatExceptionDate(
+                        deleteTarget.item.date,
+                      )}
+                    </strong>
+                    ?
+                  </>
+                )}
               </p>
             </div>
 
-            <form
-              onSubmit={handleExceptionSubmit}
-              className="space-y-6"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="exceptionDate">
-                  Date
-                </Label>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDeleteTarget(null)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
 
-                <Input
-                  id="exceptionDate"
-                  type="date"
-                  value={exceptionFormValues.date}
-                  onChange={(event) =>
-                    setExceptionFormValues((current) => ({
-                      ...current,
-                      date: event.target.value,
-                    }))
-                  }
-                  required
-                />
-              </div>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => void handleDelete()}
+                disabled={isDeleting}
+              >
+                <Trash2 className="size-4" />
 
-              <label className="flex items-center gap-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={exceptionFormValues.isFullDay}
-                  onChange={(event) =>
-                    setExceptionFormValues((current) => ({
-                      ...current,
-                      isFullDay: event.target.checked,
-                    }))
-                  }
-                  className="size-4"
-                />
-
-                <span>
-                  <span className="font-medium">
-                    Full-day exception
-                  </span>
-
-                  <span className="block text-muted-foreground">
-                    Block your entire availability for this date.
-                  </span>
-                </span>
-              </label>
-
-              {!exceptionFormValues.isFullDay && (
-                <div className="grid gap-5 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="exceptionStartTime">
-                      Start time
-                    </Label>
-
-                    <Input
-                      id="exceptionStartTime"
-                      type="time"
-                      value={exceptionFormValues.startTime}
-                      onChange={(event) =>
-                        setExceptionFormValues((current) => ({
-                          ...current,
-                          startTime: event.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="exceptionEndTime">
-                      End time
-                    </Label>
-
-                    <Input
-                      id="exceptionEndTime"
-                      type="time"
-                      value={exceptionFormValues.endTime}
-                      onChange={(event) =>
-                        setExceptionFormValues((current) => ({
-                          ...current,
-                          endTime: event.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="exceptionReason">
-                  Reason
-                </Label>
-
-                <Input
-                  id="exceptionReason"
-                  value={exceptionFormValues.reason}
-                  onChange={(event) =>
-                    setExceptionFormValues((current) => ({
-                      ...current,
-                      reason: event.target.value,
-                    }))
-                  }
-                  placeholder="Optional"
-                />
-              </div>
-
-              {exceptionFormError && (
-                <p className="text-sm text-destructive">
-                  {exceptionFormError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={closeExceptionForm}
-                  disabled={isExceptionSaving}
-                >
-                  Cancel
-                </Button>
-
-                <Button
-                  type="submit"
-                  disabled={isExceptionSaving}
-                >
-                  {isExceptionSaving
-                    ? "Saving..."
-                    : editingException
-                      ? "Save changes"
-                      : "Add exception"}
-                </Button>
-              </div>
-            </form>
-          </section>
-        )}
-      </section>
-    </main>
+                {isDeleting
+                  ? "Deleting..."
+                  : "Delete"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+    </>
   )
 }

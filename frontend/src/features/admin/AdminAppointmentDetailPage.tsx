@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   CalendarDays,
+  CheckCircle2,
   Clock3,
   FileText,
   UserRound,
@@ -10,9 +11,7 @@ import { useNavigate, useParams } from "react-router-dom"
 import { ErrorState } from "@/components/shared/ErrorState"
 import { LoadingState } from "@/components/shared/LoadingState"
 import { Button } from "@/components/ui/button"
-import {
-  useAppointmentQuery,
-} from "@/features/appointments/appointment-queries"
+import { useAppointmentQuery } from "@/features/appointments/appointment-queries"
 import type { AppointmentStatus } from "@/features/appointments/appointment.types"
 
 function formatDateTime(value: string) {
@@ -22,34 +21,19 @@ function formatDateTime(value: string) {
   })
 }
 
-function statusClass(status: AppointmentStatus) {
-  switch (status) {
-    case "CONFIRMED":
-      return "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-400"
-    case "REJECTED":
-    case "CANCELLED":
-      return "border-destructive/30 bg-destructive/10 text-destructive"
-    case "COMPLETED":
-      return "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400"
-    case "PENDING":
-    default:
-      return "border-border bg-muted/50 text-muted-foreground"
-  }
+function formatShortDate(value: string) {
+  return new Date(value).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
 }
 
-function statusLabel(status: AppointmentStatus) {
-  switch (status) {
-    case "PENDING":
-      return "Pending"
-    case "CONFIRMED":
-      return "Confirmed"
-    case "REJECTED":
-      return "Rejected"
-    case "CANCELLED":
-      return "Cancelled"
-    case "COMPLETED":
-      return "Completed"
-  }
+function formatTime(value: string) {
+  return new Date(value).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  })
 }
 
 function formatDuration(start: string, end: string) {
@@ -72,99 +56,211 @@ function formatDuration(start: string, end: string) {
   return `${hours}h ${remainingMinutes}m`
 }
 
+function statusLabel(status: AppointmentStatus) {
+  switch (status) {
+    case "PENDING":
+      return "Pending"
+    case "CONFIRMED":
+      return "Confirmed"
+    case "REJECTED":
+      return "Rejected"
+    case "CANCELLED":
+      return "Cancelled"
+    case "COMPLETED":
+      return "Completed"
+  }
+}
+
+function statusClass(status: AppointmentStatus) {
+  switch (status) {
+    case "CONFIRMED":
+      return "border-green-500/25 bg-green-500/10 text-green-700 dark:text-green-400"
+    case "REJECTED":
+    case "CANCELLED":
+      return "border-destructive/25 bg-destructive/10 text-destructive"
+    case "COMPLETED":
+      return "border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-400"
+    case "PENDING":
+    default:
+      return "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+  }
+}
+
+function statusIcon(status: AppointmentStatus) {
+  switch (status) {
+    case "CONFIRMED":
+    case "COMPLETED":
+      return CheckCircle2
+    case "PENDING":
+      return Clock3
+    case "REJECTED":
+    case "CANCELLED":
+      return Clock3
+  }
+}
+
+function InfoItem({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+
+      <p
+        className={`mt-1.5 break-all text-sm ${
+          mono ? "font-mono text-xs" : "font-medium"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  )
+}
+
 export function AdminAppointmentDetailPage() {
   const { appointmentId } = useParams()
   const navigate = useNavigate()
+
   const query = useAppointmentQuery(appointmentId ?? "")
 
   if (query.isPending) {
-    return <LoadingState />
+    return (
+      <main className="mx-auto w-full max-w-5xl p-6">
+        <LoadingState />
+      </main>
+    )
   }
 
   if (query.isError || !query.data) {
     return (
-      <main className="mx-auto w-full max-w-3xl p-6">
+      <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-fit gap-2"
+          onClick={() => navigate("/admin/appointments")}
+        >
+          <ArrowLeft
+            className="size-4"
+            aria-hidden="true"
+          />
+          Appointments
+        </Button>
+
         <ErrorState
-          message="Unable to load this appointment."
-          onRetry={() => query.refetch()}
+          message="Unable to load this appointment. The appointment record could not be found or retrieved."
+          onRetry={() => {
+            void query.refetch()
+          }}
         />
       </main>
     )
   }
 
   const appointment = query.data
+  const StatusIcon = statusIcon(appointment.status)
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-6">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-6">
       <Button
+        type="button"
         variant="ghost"
-        className="w-fit gap-2"
+        className="-ml-2 w-fit gap-2"
         onClick={() => navigate("/admin/appointments")}
       >
-        <ArrowLeft className="size-4" aria-hidden="true" />
+        <ArrowLeft
+          className="size-4"
+          aria-hidden="true"
+        />
         Appointments
       </Button>
 
-      <section>
-        <p className="text-sm font-medium text-muted-foreground">
-          Admin Portal
-        </p>
-
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-          Appointment details
-        </h1>
-
-        <p className="mt-2 text-muted-foreground">
-          Review the complete appointment record.
-        </p>
-      </section>
-
-      <section className="space-y-7 rounded-xl border bg-card p-6 shadow-sm">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            Status
+      <section className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-primary">
+            Administration
           </p>
 
-          <span
-            className={`mt-2 inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${statusClass(
-              appointment.status,
-            )}`}
-          >
-            {statusLabel(appointment.status)}
-          </span>
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            Appointment details
+          </h1>
+
+          <p className="max-w-2xl text-muted-foreground">
+            Review the authoritative record for this appointment.
+          </p>
         </div>
 
-        <div className="flex gap-3">
-          <CalendarDays
-            className="mt-0.5 size-5 shrink-0 text-muted-foreground"
+        <div
+          className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium ${statusClass(
+            appointment.status,
+          )}`}
+        >
+          <StatusIcon
+            className="size-4"
             aria-hidden="true"
           />
+          {statusLabel(appointment.status)}
+        </div>
+      </section>
 
-          <div>
-            <p className="text-sm text-muted-foreground">
-              Start
-            </p>
-            <p className="mt-1 font-medium">
-              {formatDateTime(appointment.startTime)}
-            </p>
+      <section className="overflow-hidden rounded-2xl border bg-card">
+        <div className="border-b bg-muted/15 px-5 py-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-lg border bg-background">
+              <CalendarDays
+                className="size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+            </div>
+
+            <div>
+              <p className="text-sm font-medium">
+                Appointment time
+              </p>
+
+              <p className="text-xs text-muted-foreground">
+                Scheduled meeting window
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="flex gap-3">
-          <Clock3
-            className="mt-0.5 size-5 shrink-0 text-muted-foreground"
-            aria-hidden="true"
-          />
+        <div className="grid gap-0 sm:grid-cols-3">
+          <div className="border-b p-5 sm:border-r sm:border-b-0 sm:p-6">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Date
+            </p>
 
-          <div>
-            <p className="text-sm text-muted-foreground">
-              End
+            <p className="mt-2 font-medium">
+              {formatShortDate(appointment.startTime)}
             </p>
-            <p className="mt-1 font-medium">
-              {formatDateTime(appointment.endTime)}
+          </div>
+
+          <div className="border-b p-5 sm:border-r sm:border-b-0 sm:p-6">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Time
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Duration:{" "}
+
+            <p className="mt-2 font-medium">
+              {formatTime(appointment.startTime)} –{" "}
+              {formatTime(appointment.endTime)}
+            </p>
+          </div>
+
+          <div className="p-5 sm:p-6">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Duration
+            </p>
+
+            <p className="mt-2 font-medium">
               {formatDuration(
                 appointment.startTime,
                 appointment.endTime,
@@ -172,77 +268,132 @@ export function AdminAppointmentDetailPage() {
             </p>
           </div>
         </div>
+      </section>
 
-        <div className="flex gap-3">
-          <UserRound
-            className="mt-0.5 size-5 shrink-0 text-muted-foreground"
-            aria-hidden="true"
-          />
-
-          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Student
-              </p>
-              <p className="mt-1 break-all font-mono text-sm">
-                {appointment.studentId}
-              </p>
+      <section className="grid gap-5 lg:grid-cols-2">
+        <div className="rounded-2xl border bg-card">
+          <div className="flex items-center gap-3 border-b px-5 py-4 sm:px-6">
+            <div className="flex size-9 items-center justify-center rounded-lg border bg-background">
+              <UserRound
+                className="size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
             </div>
 
             <div>
-              <p className="text-sm text-muted-foreground">
-                Faculty
+              <p className="text-sm font-medium">
+                Participants
               </p>
-              <p className="mt-1 break-all font-mono text-sm">
-                {appointment.facultyId}
+
+              <p className="text-xs text-muted-foreground">
+                Appointment participants
               </p>
             </div>
           </div>
+
+          <div className="grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
+            <InfoItem
+              label="Student"
+              value={appointment.studentId}
+              mono
+            />
+
+            <InfoItem
+              label="Faculty"
+              value={appointment.facultyId}
+              mono
+            />
+          </div>
         </div>
 
-        <div className="flex gap-3">
-          <FileText
-            className="mt-0.5 size-5 shrink-0 text-muted-foreground"
-            aria-hidden="true"
-          />
+        <div className="rounded-2xl border bg-card">
+          <div className="flex items-center gap-3 border-b px-5 py-4 sm:px-6">
+            <div className="flex size-9 items-center justify-center rounded-lg border bg-background">
+              <Clock3
+                className="size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+            </div>
 
-          <div className="min-w-0">
-            <p className="text-sm text-muted-foreground">
-              Reason for appointment
-            </p>
-            <p className="mt-1 whitespace-pre-wrap">
-              {appointment.reason}
-            </p>
+            <div>
+              <p className="text-sm font-medium">
+                Schedule
+              </p>
+
+              <p className="text-xs text-muted-foreground">
+                Exact appointment timestamps
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-5 p-5 sm:p-6">
+            <InfoItem
+              label="Starts"
+              value={formatDateTime(appointment.startTime)}
+            />
+
+            <InfoItem
+              label="Ends"
+              value={formatDateTime(appointment.endTime)}
+            />
           </div>
         </div>
       </section>
 
-      <section className="grid gap-4 rounded-xl border bg-card p-6 shadow-sm sm:grid-cols-2">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            Appointment ID
+      <section className="rounded-2xl border bg-card">
+        <div className="flex items-center gap-3 border-b px-5 py-4 sm:px-6">
+          <div className="flex size-9 items-center justify-center rounded-lg border bg-background">
+            <FileText
+              className="size-4 text-muted-foreground"
+              aria-hidden="true"
+            />
+          </div>
+
+          <div>
+            <p className="text-sm font-medium">
+              Appointment reason
+            </p>
+
+            <p className="text-xs text-muted-foreground">
+              Reason provided when the appointment was created
+            </p>
+          </div>
+        </div>
+
+        <div className="p-5 sm:p-6">
+          <p className="whitespace-pre-wrap text-sm leading-7">
+            {appointment.reason}
           </p>
-          <p className="mt-1 break-all font-mono text-xs">
-            {appointment.id}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border bg-card">
+        <div className="border-b px-5 py-4 sm:px-6">
+          <p className="text-sm font-medium">
+            Record information
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            System-generated appointment metadata
           </p>
         </div>
 
-        <div>
-          <p className="text-sm text-muted-foreground">
-            Created
-          </p>
-          <p className="mt-1 text-sm">
-            {formatDateTime(appointment.createdAt)}
-          </p>
-        </div>
+        <div className="grid gap-5 p-5 sm:grid-cols-3 sm:p-6">
+          <InfoItem
+            label="Appointment ID"
+            value={appointment.id}
+            mono
+          />
 
-        <div>
-          <p className="text-sm text-muted-foreground">
-            Last updated
-          </p>
-          <p className="mt-1 text-sm">
-            {formatDateTime(appointment.updatedAt)}
-          </p>
+          <InfoItem
+            label="Created"
+            value={formatDateTime(appointment.createdAt)}
+          />
+
+          <InfoItem
+            label="Last updated"
+            value={formatDateTime(appointment.updatedAt)}
+          />
         </div>
       </section>
     </main>
