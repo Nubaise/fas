@@ -5,6 +5,12 @@ import { ProtectedRoute } from "./guards/ProtectedRoute"
 import { RoleRoute } from "./guards/RoleRoute"
 import { routes } from "./routes"
 import { LoginPage } from "@/features/auth/LoginPage"
+import { StudentDashboardPage } from "@/features/student/StudentDashboardPage"
+import { StudentFacultyPage } from "@/features/faculty/StudentFacultyPage"
+import { StudentFacultyDetailPage } from "@/features/faculty/StudentFacultyDetailPage"
+import { StudentBookingPage } from "@/features/appointments/StudentBookingPage"
+import { StudentAppointmentsPage } from "@/features/appointments/StudentAppointmentsPage"
+import { StudentAppointmentDetailPage } from "@/features/appointments/StudentAppointmentDetailPage"
 
 export const router = createBrowserRouter([
   {
@@ -30,7 +36,27 @@ export const router = createBrowserRouter([
                 children: [
                   {
                     path: routes.student.slice(1),
-                    element: <div>Student Area</div>,
+                    element: <StudentDashboardPage />,
+                  },
+                  {
+                    path: `${routes.student.slice(1)}/faculty`,
+                    element: <StudentFacultyPage />,
+                  },
+                  {
+                    path: `${routes.student.slice(1)}/faculty/:facultyId`,
+                    element: <StudentFacultyDetailPage />,
+                  },
+                  {
+                    path: `${routes.student.slice(1)}/appointments/new`,
+                    element: <StudentBookingPage />,
+                  },
+                  {
+                    path: `${routes.student.slice(1)}/appointments`,
+                    element: <StudentAppointmentsPage />,
+                  },
+                  {
+                    path: `${routes.student.slice(1)}/appointments/:appointmentId`,
+                    element: <StudentAppointmentDetailPage />,
                   },
                 ],
               },

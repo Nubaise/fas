@@ -10,7 +10,6 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { AppointmentsService } from './appointments.service.js';
 import {
-  createAppointmentSchema,
   rescheduleAppointmentSchema,
   type CreateAppointmentDto,
   type RescheduleAppointmentDto,
@@ -30,7 +29,7 @@ export class AppointmentsController {
   @Post()
   @Version('1')
   async create(
-    @Body(createAppointmentSchema)
+    @Body()
     body: CreateAppointmentDto,
     @CurrentUser()
     currentUser: CurrentUserPayload,

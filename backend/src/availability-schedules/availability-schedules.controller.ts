@@ -13,7 +13,6 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import {
-  availabilityDateSchema,
   createAvailabilityScheduleSchema,
   updateAvailabilityScheduleSchema,
 } from './dto/availability-schedule.dto.js';
@@ -39,8 +38,7 @@ export class AvailabilitySchedulesController {
   @Version('1')
   async getAvailableSlots(
     @Param('facultyId') facultyId: string,
-    @Query('date', availabilityDateSchema)
-    date: string,
+    @Query('date') date: string,
   ) {
     return this.availabilitySchedulesService.getAvailableSlots(
       facultyId,

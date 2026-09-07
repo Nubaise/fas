@@ -1,3 +1,5 @@
+import { useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
@@ -14,7 +16,26 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>
 
 export function LoginPage() {
-  const { login } = useAuth()
+  const navigate = useNavigate()
+  const { login, user } = useAuth()
+
+  useEffect(() => {
+    if (!user) {
+      return
+    }
+
+    if (user.role === "STUDENT") {
+      navigate("/student", { replace: true })
+      return
+    }
+
+    if (user.role === "FACULTY") {
+      navigate("/faculty", { replace: true })
+      return
+    }
+
+    navigate("/admin", { replace: true })
+  }, [navigate, user])
 
   const {
     register,
