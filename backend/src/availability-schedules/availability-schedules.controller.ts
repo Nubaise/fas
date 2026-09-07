@@ -12,9 +12,9 @@ import {
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
-import {
-  createAvailabilityScheduleSchema,
-  updateAvailabilityScheduleSchema,
+import type {
+  CreateAvailabilityScheduleDto,
+  UpdateAvailabilityScheduleDto,
 } from './dto/availability-schedule.dto.js';
 import { AvailabilitySchedulesService } from './availability-schedules.service.js';
 
@@ -56,8 +56,8 @@ export class AvailabilitySchedulesController {
   @Version('1')
   @Roles('FACULTY', 'ADMIN')
   async create(
-    @Body(createAvailabilityScheduleSchema)
-    body: typeof createAvailabilityScheduleSchema['_output'],
+    @Body()
+    body: CreateAvailabilityScheduleDto,
     @CurrentUser()
     currentUser: {
       id: string;
@@ -75,8 +75,8 @@ export class AvailabilitySchedulesController {
   @Roles('FACULTY', 'ADMIN')
   async update(
     @Param('id') id: string,
-    @Body(updateAvailabilityScheduleSchema)
-    body: typeof updateAvailabilityScheduleSchema['_output'],
+    @Body()
+    body: UpdateAvailabilityScheduleDto,
     @CurrentUser()
     currentUser: {
       id: string;

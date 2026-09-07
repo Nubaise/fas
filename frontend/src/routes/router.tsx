@@ -1,16 +1,26 @@
 import { createBrowserRouter } from "react-router-dom"
+
 import App from "@/App"
 import { AppShell } from "@/components/shared/AppShell"
-import { ProtectedRoute } from "./guards/ProtectedRoute"
-import { RoleRoute } from "./guards/RoleRoute"
-import { routes } from "./routes"
 import { LoginPage } from "@/features/auth/LoginPage"
+
 import { StudentDashboardPage } from "@/features/student/StudentDashboardPage"
 import { StudentFacultyPage } from "@/features/faculty/StudentFacultyPage"
 import { StudentFacultyDetailPage } from "@/features/faculty/StudentFacultyDetailPage"
+
+import { FacultyDashboardPage } from "@/features/faculty/FacultyDashboardPage"
+import { FacultyProfilePage } from "@/features/faculty/FacultyProfilePage"
+import { FacultyAvailabilityPage } from "@/features/availability/FacultyAvailabilityPage"
+
+import { FacultyAppointmentsPage } from "@/features/appointments/FacultyAppointmentsPage"
+import { FacultyAppointmentDetailPage } from "@/features/appointments/FacultyAppointmentDetailPage"
 import { StudentBookingPage } from "@/features/appointments/StudentBookingPage"
 import { StudentAppointmentsPage } from "@/features/appointments/StudentAppointmentsPage"
 import { StudentAppointmentDetailPage } from "@/features/appointments/StudentAppointmentDetailPage"
+
+import { ProtectedRoute } from "./guards/ProtectedRoute"
+import { RoleRoute } from "./guards/RoleRoute"
+import { routes } from "./routes"
 
 export const router = createBrowserRouter([
   {
@@ -65,7 +75,23 @@ export const router = createBrowserRouter([
                 children: [
                   {
                     path: routes.faculty.slice(1),
-                    element: <div>Faculty Area</div>,
+                    element: <FacultyDashboardPage />,
+                  },
+                  {
+                    path: `${routes.faculty.slice(1)}/profile`,
+                    element: <FacultyProfilePage />,
+                  },
+                  {
+                    path: `${routes.faculty.slice(1)}/availability`,
+                    element: <FacultyAvailabilityPage />,
+                  },
+                  {
+                    path: `${routes.faculty.slice(1)}/appointments`,
+                    element: <FacultyAppointmentsPage />,
+                  },
+                  {
+                    path: `${routes.faculty.slice(1)}/appointments/:appointmentId`,
+                    element: <FacultyAppointmentDetailPage />,
                   },
                 ],
               },

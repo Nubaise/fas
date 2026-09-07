@@ -23,3 +23,8 @@ export type CreateAppointmentRequest = {
   endTime: string
   reason: string
 }
+
+export type RescheduleAppointmentRequest = {
+  startTime: string
+  endTime: string
+}

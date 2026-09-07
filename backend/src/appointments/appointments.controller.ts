@@ -10,7 +10,6 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { AppointmentsService } from './appointments.service.js';
 import {
-  rescheduleAppointmentSchema,
   type CreateAppointmentDto,
   type RescheduleAppointmentDto,
 } from './dto/appointment.dto.js';
@@ -90,7 +89,6 @@ export class AppointmentsController {
     );
   }
 
-
   @Post(':id/cancel')
   @Version('1')
   async cancel(
@@ -108,10 +106,8 @@ export class AppointmentsController {
   @Version('1')
   async reschedule(
     @Param('id') id: string,
-    @Body(rescheduleAppointmentSchema)
-    body: RescheduleAppointmentDto,
-    @CurrentUser()
-    currentUser: CurrentUserPayload,
+    @Body() body: RescheduleAppointmentDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     return this.appointmentsService.reschedule(
       id,

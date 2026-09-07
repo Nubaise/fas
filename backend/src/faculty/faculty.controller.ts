@@ -12,8 +12,6 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { FacultyService } from './faculty.service.js';
 import {
-  createFacultySchema,
-  updateFacultySchema,
   type CreateFacultyDto,
   type UpdateFacultyDto,
 } from './dto/faculty.dto.js';
@@ -45,7 +43,7 @@ export class FacultyController {
   @Version('1')
   @Roles('ADMIN')
   async create(
-    @Body(createFacultySchema) body: CreateFacultyDto,
+    @Body() body: CreateFacultyDto,
   ) {
     return this.facultyService.create(body);
   }
@@ -54,7 +52,7 @@ export class FacultyController {
   @Version('1')
   async update(
     @Param('id') id: string,
-    @Body(updateFacultySchema) body: UpdateFacultyDto,
+    @Body() body: UpdateFacultyDto,
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     return this.facultyService.update(

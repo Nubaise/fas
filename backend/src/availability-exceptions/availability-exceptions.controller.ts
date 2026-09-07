@@ -11,9 +11,9 @@ import {
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
-import {
-  createAvailabilityExceptionSchema,
-  updateAvailabilityExceptionSchema,
+import type {
+  CreateAvailabilityExceptionDto,
+  UpdateAvailabilityExceptionDto,
 } from './dto/availability-exception.dto.js';
 import { AvailabilityExceptionsService } from './availability-exceptions.service.js';
 
@@ -43,8 +43,8 @@ export class AvailabilityExceptionsController {
   @Version('1')
   @Roles('FACULTY', 'ADMIN')
   async create(
-    @Body(createAvailabilityExceptionSchema)
-    body: typeof createAvailabilityExceptionSchema['_output'],
+    @Body()
+    body: CreateAvailabilityExceptionDto,
     @CurrentUser()
     currentUser: {
       id: string;
@@ -62,8 +62,8 @@ export class AvailabilityExceptionsController {
   @Roles('FACULTY', 'ADMIN')
   async update(
     @Param('id') id: string,
-    @Body(updateAvailabilityExceptionSchema)
-    body: typeof updateAvailabilityExceptionSchema['_output'],
+    @Body()
+    body: UpdateAvailabilityExceptionDto,
     @CurrentUser()
     currentUser: {
       id: string;
