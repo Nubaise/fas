@@ -129,6 +129,7 @@ function BulkImportDialog({
   result,
   pending,
   onImport,
+  onChooseFile,
   onClose,
 }: {
   rows: BulkOnboardFacultyItem[]
@@ -140,6 +141,7 @@ function BulkImportDialog({
   } | null
   pending: boolean
   onImport: () => void
+  onChooseFile: () => void
   onClose: () => void
 }) {
   useEffect(() => {
@@ -343,6 +345,15 @@ function BulkImportDialog({
               <p className="mt-1 text-sm text-muted-foreground">
                 Choose a CSV file to preview faculty records.
               </p>
+
+              <Button
+                type="button"
+                className="mt-5"
+                onClick={onChooseFile}
+              >
+                <FileUp className="size-4" aria-hidden="true" />
+                Choose CSV file
+              </Button>
             </div>
           )}
         </div>
@@ -786,6 +797,7 @@ export function AdminFacultyPage() {
           result={bulkResult}
           pending={bulkMutation.isPending}
           onImport={() => void submitBulk()}
+          onChooseFile={() => fileInputRef.current?.click()}
           onClose={resetBulkState}
         />
       ) : null}
