@@ -56,6 +56,21 @@ function formatDuration(start: string, end: string) {
   return `${hours}h ${remainingMinutes}m`
 }
 
+function participantName(
+  participant?: {
+    firstName: string
+    lastName: string
+  },
+  fallbackId?: string,
+) {
+  const name = [participant?.firstName, participant?.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim()
+
+  return name || fallbackId || "Unknown"
+}
+
 function statusLabel(status: AppointmentStatus) {
   switch (status) {
     case "PENDING":
@@ -292,17 +307,35 @@ export function AdminAppointmentDetailPage() {
           </div>
 
           <div className="grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
-            <InfoItem
-              label="Student"
-              value={appointment.studentId}
-              mono
-            />
+            <div>
+              <InfoItem
+                label="Student"
+                value={participantName(
+                  appointment.student,
+                  appointment.studentId,
+                )}
+              />
+              {appointment.student?.studentNumber ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {appointment.student.studentNumber}
+                </p>
+              ) : null}
+            </div>
 
-            <InfoItem
-              label="Faculty"
-              value={appointment.facultyId}
-              mono
-            />
+            <div>
+              <InfoItem
+                label="Faculty"
+                value={participantName(
+                  appointment.faculty,
+                  appointment.facultyId,
+                )}
+              />
+              {appointment.faculty?.employeeNumber ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {appointment.faculty.employeeNumber}
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
 

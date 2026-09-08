@@ -44,6 +44,21 @@ function formatTime(value: string) {
   })
 }
 
+function participantName(
+  participant?: {
+    firstName: string
+    lastName: string
+  },
+  fallbackId?: string,
+) {
+  const name = [participant?.firstName, participant?.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim()
+
+  return name || fallbackId || "Unknown"
+}
+
 function statusLabel(status: AppointmentStatus) {
   switch (status) {
     case "PENDING":
@@ -154,6 +169,10 @@ export function AdminAppointmentsPage() {
         appointment.studentId,
         appointment.facultyId,
         appointment.reason,
+        participantName(appointment.student),
+        participantName(appointment.faculty),
+        appointment.student?.studentNumber ?? "",
+        appointment.faculty?.employeeNumber ?? "",
       ].some((value) =>
         value.toLowerCase().includes(normalizedSearch),
       )
@@ -462,9 +481,17 @@ export function AdminAppointmentsPage() {
                           Student
                         </p>
 
-                        <p className="mt-1 break-all font-mono text-xs">
-                          {appointment.studentId}
+                        <p className="mt-1 font-medium">
+                          {participantName(
+                            appointment.student,
+                            appointment.studentId,
+                          )}
                         </p>
+                        {appointment.student?.studentNumber ? (
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {appointment.student.studentNumber}
+                          </p>
+                        ) : null}
                       </div>
 
                       <div className="lg:mt-3">
@@ -472,9 +499,17 @@ export function AdminAppointmentsPage() {
                           Faculty
                         </p>
 
-                        <p className="mt-1 break-all font-mono text-xs">
-                          {appointment.facultyId}
+                        <p className="mt-1 font-medium">
+                          {participantName(
+                            appointment.faculty,
+                            appointment.facultyId,
+                          )}
                         </p>
+                        {appointment.faculty?.employeeNumber ? (
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {appointment.faculty.employeeNumber}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
 

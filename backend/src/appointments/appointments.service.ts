@@ -166,6 +166,10 @@ export class AppointmentsService {
   ): Promise<AppointmentEntity[]> {
     if (currentUser.role === 'ADMIN') {
       return this.appointmentsRepository.find({
+        relations: {
+          student: true,
+          faculty: true,
+        },
         order: {
           startTime: 'ASC',
           createdAt: 'ASC',
@@ -226,6 +230,13 @@ export class AppointmentsService {
   ): Promise<AppointmentEntity> {
     const appointment = await this.appointmentsRepository.findOne({
       where: { id },
+      relations:
+        currentUser.role === 'ADMIN'
+          ? {
+              student: true,
+              faculty: true,
+            }
+          : undefined,
     });
 
     if (!appointment) {
