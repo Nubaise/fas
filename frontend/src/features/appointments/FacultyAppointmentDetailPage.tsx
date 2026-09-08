@@ -592,15 +592,24 @@ export function FacultyAppointmentDetailPage() {
                 Student
               </p>
 
-              <p className="mt-2 break-all font-mono text-xs text-muted-foreground">
-                {appointment.studentId}
-              </p>
+              {appointment.student ? (
+                <>
+                  <p className="mt-2 font-medium">
+                    {appointment.student.firstName}{" "}
+                    {appointment.student.lastName}
+                  </p>
 
-              <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                Student details are represented by the appointment
-                record because no student profile data is embedded in
-                this appointment response.
-              </p>
+                  {appointment.student.studentNumber ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {appointment.student.studentNumber}
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Student details unavailable
+                </p>
+              )}
             </section>
           </aside>
         </div>

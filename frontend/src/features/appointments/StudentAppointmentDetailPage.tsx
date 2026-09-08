@@ -298,9 +298,24 @@ export function StudentAppointmentDetailPage() {
               Faculty
             </p>
 
-            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
-              {appointment.facultyId}
-            </p>
+            {appointment.faculty ? (
+              <>
+                <p className="mt-1 font-medium">
+                  {appointment.faculty.firstName}{" "}
+                  {appointment.faculty.lastName}
+                </p>
+
+                {appointment.faculty.employeeNumber ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {appointment.faculty.employeeNumber}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Faculty details unavailable
+              </p>
+            )}
           </div>
 
           <div>
@@ -308,9 +323,24 @@ export function StudentAppointmentDetailPage() {
               Student
             </p>
 
-            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
-              {appointment.studentId}
-            </p>
+            {appointment.student ? (
+              <>
+                <p className="mt-1 font-medium">
+                  {appointment.student.firstName}{" "}
+                  {appointment.student.lastName}
+                </p>
+
+                {appointment.student.studentNumber ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {appointment.student.studentNumber}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Student details unavailable
+              </p>
+            )}
           </div>
 
           <div>

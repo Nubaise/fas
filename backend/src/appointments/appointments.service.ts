@@ -194,6 +194,10 @@ export class AppointmentsService {
         where: {
           studentId: student.id,
         },
+        relations: {
+          student: true,
+          faculty: true,
+        },
         order: {
           startTime: 'ASC',
           createdAt: 'ASC',
@@ -217,6 +221,10 @@ export class AppointmentsService {
       where: {
         facultyId: faculty.id,
       },
+      relations: {
+        student: true,
+        faculty: true,
+      },
       order: {
         startTime: 'ASC',
         createdAt: 'ASC',
@@ -230,13 +238,10 @@ export class AppointmentsService {
   ): Promise<AppointmentEntity> {
     const appointment = await this.appointmentsRepository.findOne({
       where: { id },
-      relations:
-        currentUser.role === 'ADMIN'
-          ? {
-              student: true,
-              faculty: true,
-            }
-          : undefined,
+      relations: {
+        student: true,
+        faculty: true,
+      },
     });
 
     if (!appointment) {

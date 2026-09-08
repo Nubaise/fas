@@ -314,6 +314,10 @@ describe('AppointmentsService', () => {
 
       expect(result).toBe(appointments);
       expect(appointmentsRepository.find).toHaveBeenCalledWith({
+        relations: {
+          student: true,
+          faculty: true,
+        },
         order: {
           startTime: 'ASC',
           createdAt: 'ASC',
@@ -341,6 +345,19 @@ describe('AppointmentsService', () => {
       });
 
       expect(result).toBe(appointments);
+      expect(appointmentsRepository.find).toHaveBeenCalledWith({
+        where: {
+          studentId: 'student-1',
+        },
+        relations: {
+          student: true,
+          faculty: true,
+        },
+        order: {
+          startTime: 'ASC',
+          createdAt: 'ASC',
+        },
+      });
     });
 
     it('should return only the current faculty appointments', async () => {
@@ -363,6 +380,19 @@ describe('AppointmentsService', () => {
       });
 
       expect(result).toBe(appointments);
+      expect(appointmentsRepository.find).toHaveBeenCalledWith({
+        where: {
+          facultyId: 'faculty-1',
+        },
+        relations: {
+          student: true,
+          faculty: true,
+        },
+        order: {
+          startTime: 'ASC',
+          createdAt: 'ASC',
+        },
+      });
     });
 
     it('should reject student list access when the student profile is missing', async () => {
@@ -404,6 +434,13 @@ describe('AppointmentsService', () => {
       });
 
       expect(result).toBe(appointment);
+      expect(appointmentsRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'appointment-1' },
+        relations: {
+          student: true,
+          faculty: true,
+        },
+      });
     });
 
     it('should return an appointment to its student owner', async () => {
@@ -419,6 +456,27 @@ describe('AppointmentsService', () => {
       });
 
       expect(result).toBe(appointment);
+    });
+
+    it('should load student and faculty relations for owner reads', async () => {
+      appointmentsRepository.findOne.mockResolvedValue(appointment);
+      studentsRepository.findOne.mockResolvedValue({
+        id: 'student-1',
+        userId: 'student-user',
+      });
+
+      await service.findById('appointment-1', {
+        id: 'student-user',
+        role: 'STUDENT',
+      });
+
+      expect(appointmentsRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'appointment-1' },
+        relations: {
+          student: true,
+          faculty: true,
+        },
+      });
     });
 
     it('should forbid a student from viewing another student appointment', async () => {
