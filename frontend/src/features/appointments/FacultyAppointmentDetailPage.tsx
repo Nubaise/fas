@@ -54,6 +54,20 @@ function toOffsetDateTime(date: string, time: string) {
 }
 
 function formatTime(value: string) {
+  // Appointment timestamps are ISO date-time values, so slicing the
+  // first five characters returns the year ("2026-") instead of the time.
+  // Handle both full ISO timestamps and time-only values used by slots.
+  if (value.includes("T")) {
+    const date = new Date(value)
+
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    }
+  }
+
   return value.slice(0, 5)
 }
 
